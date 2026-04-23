@@ -2,12 +2,15 @@ use std::{
   collections::HashMap,
   ffi::OsStr,
   fs,
+  io::Read,
   path::{Path, PathBuf},
 };
 
+use regex::Regex;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+use zip::ZipArchive;
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -20,6 +23,7 @@ pub struct BookDto {
   pub year: i64,
   pub progress: i64,
   pub tags: Vec<String>,
+  pub is_epub_available: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -44,6 +48,41 @@ pub struct UpdateBookMetadataInput {
   pub author: String,
   pub description: String,
   pub tags: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EpubChapterDto {
+  pub title: String,
+  pub content: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EpubReadDto {
+  pub book_id: i64,
+  pub book_title: String,
+  pub chapters: Vec<EpubChapterDto>,
+  pub last_chapter_index: i64,
+  pub progress_percent: i64,
+}
+
+fn parse_last_chapter_index(last_position: Option<String>, chapter_count: usize) -> i64 {
+  if chapter_count == 0 {
+    return 0;
+  }
+
+  let Some(raw) = last_position else {
+    return 0;
+  };
+
+  let parsed = raw
+    .strip_prefix("chapter_index:")
+    .and_then(|value| value.parse::<i64>().ok())
+    .unwrap_or(0);
+
+  let max_index = (chapter_count.saturating_sub(1)) as i64;
+  parsed.clamp(0, max_index)
 }
 
 fn db_path(app: &AppHandle) -> Result<PathBuf, String> {
@@ -176,6 +215,51 @@ fn normalize_tags(tags: &[String]) -> Vec<String> {
   }
 
   deduped
+}
+
+fn decode_basic_html_entities(input: &str) -> String {
+  input
+    .replace("&nbsp;", " ")
+    .replace("&amp;", "&")
+    .replace("&lt;", "<")
+    .replace("&gt;", ">")
+    .replace("&quot;", "\"")
+    .replace("&#39;", "'")
+}
+
+fn sanitize_epub_html_to_text(input: &str) -> Result<String, String> {
+  let script_style_re = Regex::new(r"(?is)<(script|style)[^>]*>.*?</(script|style)>")
+    .map_err(|err| format!("failed to compile script/style regex: {err}"))?;
+  let paragraph_break_re = Regex::new(r"(?i)</(p|div|section|article|h[1-6]|li|blockquote|tr)>")
+    .map_err(|err| format!("failed to compile block regex: {err}"))?;
+  let br_re = Regex::new(r"(?i)<br\s*/?>").map_err(|err| format!("failed to compile br regex: {err}"))?;
+  let tag_re = Regex::new(r"(?is)<[^>]+>").map_err(|err| format!("failed to compile tag regex: {err}"))?;
+  let whitespace_re = Regex::new(r"[ \t]+").map_err(|err| format!("failed to compile whitespace regex: {err}"))?;
+  let line_break_re = Regex::new(r"\n{3,}").map_err(|err| format!("failed to compile line break regex: {err}"))?;
+
+  let without_scripts = script_style_re.replace_all(input, " ");
+  let with_breaks = paragraph_break_re.replace_all(&without_scripts, "\n");
+  let with_line_breaks = br_re.replace_all(&with_breaks, "\n");
+  let without_tags = tag_re.replace_all(&with_line_breaks, " ");
+  let decoded = decode_basic_html_entities(&without_tags);
+  let compact_spaces = whitespace_re.replace_all(&decoded, " ");
+  let compact_breaks = line_break_re.replace_all(&compact_spaces, "\n\n");
+
+  Ok(compact_breaks.trim().to_string())
+}
+
+fn chapter_title_from_path(path: &str) -> String {
+  let file_name = Path::new(path)
+    .file_stem()
+    .and_then(OsStr::to_str)
+    .unwrap_or("Capítulo");
+
+  let normalized = file_name.replace(['_', '-'], " ").trim().to_string();
+  if normalized.is_empty() {
+    "Capítulo".to_string()
+  } else {
+    normalized
+  }
 }
 
 pub fn initialize_database(app: &AppHandle) -> Result<(), String> {
@@ -505,6 +589,122 @@ pub fn update_book_metadata(app: AppHandle, payload: UpdateBookMetadataInput) ->
 }
 
 #[tauri::command]
+pub fn read_epub(app: AppHandle, book_id: i64) -> Result<EpubReadDto, String> {
+  let conn = open_connection(&app)?;
+
+  let (book_title, file_path, last_position, progress_percent): (String, String, Option<String>, i64) = conn
+    .query_row(
+      r#"
+      SELECT b.title, bf.file_path, rp.last_position, COALESCE(rp.progress_percent, 0)
+      FROM books b
+      INNER JOIN book_formats bf ON bf.book_id = b.id
+      LEFT JOIN reading_progress rp ON rp.book_id = b.id
+      WHERE b.id = ?1
+        AND bf.format = 'EPUB'
+        AND bf.file_path IS NOT NULL
+      ORDER BY bf.id ASC
+      LIMIT 1
+      "#,
+      params![book_id],
+      |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+    )
+    .map_err(|err| format!("failed to locate EPUB file path: {err}"))?;
+
+  let epub_path = PathBuf::from(file_path);
+  if !epub_path.exists() {
+    return Err("arquivo EPUB não encontrado no disco local".to_string());
+  }
+
+  let epub_file = fs::File::open(&epub_path).map_err(|err| format!("failed to open EPUB file: {err}"))?;
+  let mut archive =
+    ZipArchive::new(epub_file).map_err(|err| format!("failed to read EPUB archive: {err}"))?;
+
+  let mut chapter_candidates: Vec<(String, String)> = Vec::new();
+
+  for index in 0..archive.len() {
+    let mut entry = archive
+      .by_index(index)
+      .map_err(|err| format!("failed to read EPUB entry: {err}"))?;
+
+    if !entry.is_file() {
+      continue;
+    }
+
+    let name = entry.name().to_string();
+    if !(name.ends_with(".xhtml") || name.ends_with(".html") || name.ends_with(".htm")) {
+      continue;
+    }
+
+    if name.contains("toc") || name.contains("nav") {
+      continue;
+    }
+
+    let mut content = String::new();
+    if entry.read_to_string(&mut content).is_err() || content.trim().is_empty() {
+      continue;
+    }
+
+    let plain_text = sanitize_epub_html_to_text(&content)?;
+    if plain_text.is_empty() {
+      continue;
+    }
+
+    chapter_candidates.push((name, plain_text));
+  }
+
+  chapter_candidates.sort_by(|left, right| left.0.cmp(&right.0));
+
+  let chapters = chapter_candidates
+    .into_iter()
+    .map(|(path, content)| EpubChapterDto {
+      title: chapter_title_from_path(&path),
+      content,
+    })
+    .collect::<Vec<_>>();
+
+  if chapters.is_empty() {
+    return Err("não foi possível extrair conteúdo textual deste EPUB".to_string());
+  }
+
+  let last_chapter_index = parse_last_chapter_index(last_position, chapters.len());
+
+  Ok(EpubReadDto {
+    book_id,
+    book_title,
+    chapters,
+    last_chapter_index,
+    progress_percent,
+  })
+}
+
+#[tauri::command]
+pub fn save_reading_progress(
+  app: AppHandle,
+  book_id: i64,
+  last_position: String,
+  progress_percent: i64,
+) -> Result<(), String> {
+  let conn = open_connection(&app)?;
+  let bounded_progress = progress_percent.clamp(0, 100);
+
+  conn
+    .execute(
+      r#"
+      INSERT INTO reading_progress (book_id, progress_percent, last_position, updated_at)
+      VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)
+      ON CONFLICT(book_id) DO UPDATE
+      SET progress_percent = excluded.progress_percent,
+          last_position = excluded.last_position,
+          updated_at = CURRENT_TIMESTAMP
+      "#,
+      params![book_id, bounded_progress, last_position],
+    )
+    .map_err(|err| format!("failed to save reading progress: {err}"))?;
+
+  Ok(())
+}
+
+#[tauri::command]
 pub fn list_books(app: AppHandle) -> Result<Vec<BookDto>, String> {
   let conn = open_connection(&app)?;
 
@@ -524,7 +724,14 @@ pub fn list_books(app: AppHandle) -> Result<Vec<BookDto>, String> {
           ORDER BY bf.id ASC
           LIMIT 1
         ), 'UNKNOWN') AS format,
-        COALESCE(rp.progress_percent, 0) AS progress
+        COALESCE(rp.progress_percent, 0) AS progress,
+        EXISTS(
+          SELECT 1
+          FROM book_formats bf2
+          WHERE bf2.book_id = b.id
+            AND bf2.format = 'EPUB'
+            AND bf2.file_path IS NOT NULL
+        ) AS is_epub_available
       FROM books b
       LEFT JOIN reading_progress rp ON rp.book_id = b.id
       ORDER BY b.created_at DESC, b.id DESC
@@ -543,6 +750,7 @@ pub fn list_books(app: AppHandle) -> Result<Vec<BookDto>, String> {
         format: row.get(5)?,
         progress: row.get(6)?,
         tags: Vec::new(),
+        is_epub_available: row.get(7)?,
       })
     })
     .map_err(|err| format!("failed to execute list_books query: {err}"))?;

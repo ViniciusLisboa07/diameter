@@ -22,7 +22,9 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       db::list_books,
       db::import_books,
-      db::update_book_metadata
+      db::update_book_metadata,
+      db::read_epub,
+      db::save_reading_progress
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");

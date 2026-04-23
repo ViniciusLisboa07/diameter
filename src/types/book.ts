@@ -7,4 +7,5 @@ export type Book = {
   progress: number
   description: string
   tags: string[]
+  isEpubAvailable: boolean
 }

@@ -20,6 +20,8 @@ type MetadataDraft = {
 type BookDetailsPanelProps = {
   book: Book
   onSaveMetadata: (bookId: number, draft: MetadataDraft) => Promise<void>
+  onReadBook: (bookId: number) => Promise<void>
+  isOpeningReader: boolean
 }
 
 function parseTags(tagsInput: string): string[] {
@@ -39,7 +41,7 @@ function areTagArraysEqual(left: string[], right: string[]): boolean {
   return left.every((tag, index) => tag === right[index])
 }
 
-export function BookDetailsPanel({ book, onSaveMetadata }: BookDetailsPanelProps) {
+export function BookDetailsPanel({ book, onSaveMetadata, onReadBook, isOpeningReader }: BookDetailsPanelProps) {
   const [title, setTitle] = useState(book.title)
   const [author, setAuthor] = useState(book.author)
   const [description, setDescription] = useState(book.description)
@@ -118,6 +120,18 @@ export function BookDetailsPanel({ book, onSaveMetadata }: BookDetailsPanelProps
               </Badge>
             ))}
           </div>
+
+          <Button
+            onClick={() => onReadBook(book.id)}
+            disabled={book.format !== 'EPUB' || !book.isEpubAvailable || isOpeningReader}
+            className="w-full"
+          >
+            {isOpeningReader ? 'Abrindo reader...' : book.progress > 0 ? 'Continuar leitura' : 'Ler'}
+          </Button>
+          {book.format === 'EPUB' && !book.isEpubAvailable && (
+            <p className="text-xs text-muted-foreground">Este EPUB ainda não tem arquivo local legível no app.</p>
+          )}
+          {book.format !== 'EPUB' && <p className="text-xs text-muted-foreground">Leitura disponível apenas para EPUB nesta fase.</p>}
 
           <Separator />
 

@@ -5,11 +5,20 @@ import { AppSidebar } from '@/components/layout/app-sidebar'
 import { BookDetailsPanel } from '@/components/layout/book-details-panel'
 import { LibraryCanvas } from '@/components/layout/library-canvas'
 import { TopBar, type LibraryViewMode } from '@/components/layout/top-bar'
+import { EpubReaderScreen } from '@/components/reader/epub-reader-screen'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useTheme } from '@/hooks/use-theme'
-import { importBooks, listBooks, type ImportBooksResult, updateBookMetadata } from '@/lib/books-repository'
+import {
+  importBooks,
+  listBooks,
+  readEpub,
+  saveReadingProgress,
+  type EpubReadResult,
+  type ImportBooksResult,
+  updateBookMetadata,
+} from '@/lib/books-repository'
 import { cn } from '@/lib/utils'
 import type { Book } from '@/types/book'
 
@@ -48,6 +57,9 @@ export function AppShell() {
   const [isDragActive, setIsDragActive] = useState(false)
   const [isImporting, setIsImporting] = useState(false)
   const [importFeedback, setImportFeedback] = useState<string | null>(null)
+  const [isOpeningReader, setIsOpeningReader] = useState(false)
+  const [readerError, setReaderError] = useState<string | null>(null)
+  const [activeReader, setActiveReader] = useState<EpubReadResult | null>(null)
   const importInFlightRef = useRef(false)
 
   const loadLibrary = useCallback(async () => {
@@ -96,6 +108,46 @@ export function AppShell() {
       }),
     )
   }, [])
+
+  const handleOpenReader = useCallback(async (bookId: number) => {
+    setReaderError(null)
+    setIsOpeningReader(true)
+
+    try {
+      const content = await readEpub(bookId)
+      setActiveReader(content)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao abrir EPUB.'
+      setReaderError(message)
+    } finally {
+      setIsOpeningReader(false)
+    }
+  }, [])
+
+  const handleProgressChange = useCallback(
+    async (chapterIndex: number, progressPercent: number) => {
+      if (!activeReader) {
+        return
+      }
+
+      const normalizedProgress = Math.max(0, Math.min(100, progressPercent))
+      const lastPosition = `chapter_index:${chapterIndex}`
+
+      await saveReadingProgress(activeReader.bookId, lastPosition, normalizedProgress)
+
+      setBooks((currentBooks) =>
+        currentBooks.map((book) =>
+          book.id === activeReader.bookId
+            ? {
+                ...book,
+                progress: normalizedProgress,
+              }
+            : book,
+        ),
+      )
+    },
+    [activeReader],
+  )
 
   useEffect(() => {
     void loadLibrary()
@@ -203,6 +255,22 @@ export function AppShell() {
     return filteredBooks.find((book) => book.id === selectedBookId) ?? filteredBooks[0]
   }, [filteredBooks, selectedBookId])
 
+  if (activeReader) {
+    return (
+      <EpubReaderScreen
+        bookId={activeReader.bookId}
+        bookTitle={activeReader.bookTitle}
+        chapters={activeReader.chapters}
+        initialChapterIndex={activeReader.lastChapterIndex}
+        onBack={() => {
+          setActiveReader(null)
+          void loadLibrary()
+        }}
+        onProgressChange={handleProgressChange}
+      />
+    )
+  }
+
   return (
     <div className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-[260px_1fr_340px] lg:p-5">
       <AppSidebar />
@@ -222,6 +290,7 @@ export function AppShell() {
           <Badge variant="secondary">Importação por drag and drop</Badge>
           {isImporting && <p className="text-xs text-muted-foreground">Importando arquivos...</p>}
           {!isImporting && importFeedback && <p className="text-xs text-muted-foreground">{importFeedback}</p>}
+          {readerError && <p className="text-xs text-red-500">{readerError}</p>}
         </div>
 
         {books.length > 0 && (
@@ -309,7 +378,12 @@ export function AppShell() {
       </section>
 
       {selectedBook ? (
-        <BookDetailsPanel book={selectedBook} onSaveMetadata={handleSaveMetadata} />
+        <BookDetailsPanel
+          book={selectedBook}
+          onSaveMetadata={handleSaveMetadata}
+          onReadBook={handleOpenReader}
+          isOpeningReader={isOpeningReader}
+        />
       ) : (
         <Card className="h-full border bg-card/85">
           <CardContent className="flex h-full items-center justify-center p-6 text-sm text-muted-foreground">

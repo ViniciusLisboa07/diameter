@@ -1,11 +1,10 @@
-import { BookOpenText, FolderUp, Home, Tags } from 'lucide-react'
+import { BookOpenText, Home, Tags } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 
 const menuItems = [
   { icon: Home, label: 'Biblioteca', active: true },
-  { icon: FolderUp, label: 'Importar', active: false },
   { icon: Tags, label: 'Coleções', active: false },
 ]
 

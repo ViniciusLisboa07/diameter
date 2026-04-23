@@ -11,11 +11,25 @@ type BookDto = {
   year: number
   progress: number
   tags: string[]
+  isEpubAvailable: boolean
 }
 
 type ImportRejection = {
   fileName: string
   reason: string
+}
+
+type EpubChapter = {
+  title: string
+  content: string
+}
+
+export type EpubReadResult = {
+  bookId: number
+  bookTitle: string
+  chapters: EpubChapter[]
+  lastChapterIndex: number
+  progressPercent: number
 }
 
 export type ImportBooksResult = {
@@ -43,6 +57,7 @@ export async function listBooks(): Promise<Book[]> {
     year: book.year,
     progress: book.progress,
     tags: book.tags,
+    isEpubAvailable: book.isEpubAvailable,
   }))
 }
 
@@ -52,4 +67,16 @@ export async function importBooks(paths: string[]): Promise<ImportBooksResult> {
 
 export async function updateBookMetadata(payload: UpdateBookMetadataInput): Promise<void> {
   await invoke('update_book_metadata', { payload })
+}
+
+export async function readEpub(bookId: number): Promise<EpubReadResult> {
+  return invoke<EpubReadResult>('read_epub', { bookId })
+}
+
+export async function saveReadingProgress(
+  bookId: number,
+  lastPosition: string,
+  progressPercent: number,
+): Promise<void> {
+  await invoke('save_reading_progress', { bookId, lastPosition, progressPercent })
 }
