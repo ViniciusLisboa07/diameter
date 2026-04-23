@@ -1,7 +1,12 @@
-use std::{collections::HashMap, fs};
+use std::{
+  collections::HashMap,
+  ffi::OsStr,
+  fs,
+  path::{Path, PathBuf},
+};
 
 use rusqlite::{params, Connection};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug, Serialize)]
@@ -17,7 +22,31 @@ pub struct BookDto {
   pub tags: Vec<String>,
 }
 
-fn db_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportRejection {
+  pub file_name: String,
+  pub reason: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportBooksResult {
+  pub imported_count: usize,
+  pub rejected: Vec<ImportRejection>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateBookMetadataInput {
+  pub book_id: i64,
+  pub title: String,
+  pub author: String,
+  pub description: String,
+  pub tags: Vec<String>,
+}
+
+fn db_path(app: &AppHandle) -> Result<PathBuf, String> {
   let app_data_dir = app
     .path()
     .app_local_data_dir()
@@ -32,6 +61,121 @@ fn open_connection(app: &AppHandle) -> Result<Connection, String> {
   let path = db_path(app)?;
 
   Connection::open(path).map_err(|err| format!("failed to open sqlite database: {err}"))
+}
+
+fn library_dir(app: &AppHandle) -> Result<PathBuf, String> {
+  let app_data_dir = app
+    .path()
+    .app_local_data_dir()
+    .map_err(|err| format!("failed to get app local data dir: {err}"))?;
+
+  let library = app_data_dir.join("library");
+  fs::create_dir_all(&library).map_err(|err| format!("failed to create library dir: {err}"))?;
+
+  Ok(library)
+}
+
+fn normalize_book_title(file_path: &Path) -> String {
+  let stem = file_path
+    .file_stem()
+    .and_then(OsStr::to_str)
+    .unwrap_or("Livro sem título")
+    .trim();
+
+  let normalized = stem.replace(['_', '-'], " ").trim().to_owned();
+
+  if normalized.is_empty() {
+    "Livro sem título".to_string()
+  } else {
+    normalized
+  }
+}
+
+fn resolve_format(file_path: &Path) -> Option<&'static str> {
+  let ext = file_path.extension().and_then(OsStr::to_str)?.to_lowercase();
+
+  match ext.as_str() {
+    "epub" => Some("EPUB"),
+    "pdf" => Some("PDF"),
+    _ => None,
+  }
+}
+
+fn next_available_destination(source: &Path, destination_dir: &Path) -> PathBuf {
+  let stem = source
+    .file_stem()
+    .and_then(OsStr::to_str)
+    .unwrap_or("arquivo")
+    .to_string();
+  let ext = source
+    .extension()
+    .and_then(OsStr::to_str)
+    .map(|value| format!(".{value}"))
+    .unwrap_or_default();
+
+  let mut counter = 0_u32;
+
+  loop {
+    let file_name = if counter == 0 {
+      format!("{stem}{ext}")
+    } else {
+      format!("{stem}-{counter}{ext}")
+    };
+
+    let candidate = destination_dir.join(file_name);
+
+    if !candidate.exists() {
+      return candidate;
+    }
+
+    counter += 1;
+  }
+}
+
+fn insert_imported_book(conn: &Connection, title: &str, format: &str, file_path: &str) -> Result<(), String> {
+  conn
+    .execute(
+      "INSERT INTO books (title, author, description, publication_year) VALUES (?1, ?2, ?3, ?4)",
+      params![title, "Autor desconhecido", "", 0_i64],
+    )
+    .map_err(|err| format!("failed to create imported book: {err}"))?;
+
+  let book_id = conn.last_insert_rowid();
+
+  conn
+    .execute(
+      "INSERT INTO book_formats (book_id, format, file_path) VALUES (?1, ?2, ?3)",
+      params![book_id, format, file_path],
+    )
+    .map_err(|err| format!("failed to create imported format: {err}"))?;
+
+  conn
+    .execute(
+      "INSERT INTO reading_progress (book_id, progress_percent, last_position) VALUES (?1, ?2, ?3)",
+      params![book_id, 0_i64, Option::<String>::None],
+    )
+    .map_err(|err| format!("failed to create imported reading progress: {err}"))?;
+
+  Ok(())
+}
+
+fn normalize_tags(tags: &[String]) -> Vec<String> {
+  let mut deduped = Vec::new();
+  let mut seen = std::collections::HashSet::new();
+
+  for tag in tags {
+    let normalized = tag.trim();
+    if normalized.is_empty() {
+      continue;
+    }
+
+    let dedupe_key = normalized.to_lowercase();
+    if seen.insert(dedupe_key) {
+      deduped.push(normalized.to_string());
+    }
+  }
+
+  deduped
 }
 
 pub fn initialize_database(app: &AppHandle) -> Result<(), String> {
@@ -224,6 +368,138 @@ fn seed_database(conn: &Connection) -> Result<(), String> {
     params![book_3_id, 71_i64, "chapter-09"],
   )
   .map_err(|err| format!("failed to insert reading progress for book 3: {err}"))?;
+
+  Ok(())
+}
+
+#[tauri::command]
+pub fn import_books(app: AppHandle, paths: Vec<String>) -> Result<ImportBooksResult, String> {
+  let conn = open_connection(&app)?;
+  let library = library_dir(&app)?;
+
+  let mut imported_count = 0_usize;
+  let mut rejected = Vec::new();
+
+  for raw_path in paths {
+    let source_path = PathBuf::from(&raw_path);
+    let file_name = source_path
+      .file_name()
+      .and_then(OsStr::to_str)
+      .unwrap_or("arquivo")
+      .to_string();
+
+    if !source_path.exists() || !source_path.is_file() {
+      rejected.push(ImportRejection {
+        file_name,
+        reason: "arquivo não encontrado".to_string(),
+      });
+      continue;
+    }
+
+    let Some(format) = resolve_format(&source_path) else {
+      rejected.push(ImportRejection {
+        file_name,
+        reason: "extensão não suportada (use EPUB ou PDF)".to_string(),
+      });
+      continue;
+    };
+
+    let destination = next_available_destination(&source_path, &library);
+
+    if let Err(err) = fs::copy(&source_path, &destination) {
+      rejected.push(ImportRejection {
+        file_name,
+        reason: format!("falha ao copiar arquivo: {err}"),
+      });
+      continue;
+    }
+
+    let destination_text = destination.to_string_lossy().to_string();
+
+    if let Err(err) = insert_imported_book(&conn, &normalize_book_title(&source_path), format, &destination_text) {
+      let _ = fs::remove_file(&destination);
+      rejected.push(ImportRejection {
+        file_name,
+        reason: err,
+      });
+      continue;
+    }
+
+    imported_count += 1;
+  }
+
+  Ok(ImportBooksResult {
+    imported_count,
+    rejected,
+  })
+}
+
+#[tauri::command]
+pub fn update_book_metadata(app: AppHandle, payload: UpdateBookMetadataInput) -> Result<(), String> {
+  let mut conn = open_connection(&app)?;
+  let tx = conn
+    .transaction()
+    .map_err(|err| format!("failed to start update_book_metadata transaction: {err}"))?;
+
+  let title = payload.title.trim();
+  let author = payload.author.trim();
+  let description = payload.description.trim();
+  let tags = normalize_tags(&payload.tags);
+
+  let rows_affected = tx
+    .execute(
+      r#"
+      UPDATE books
+      SET title = ?1, author = ?2, description = ?3, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?4
+      "#,
+      params![
+        if title.is_empty() { "Livro sem título" } else { title },
+        if author.is_empty() {
+          "Autor desconhecido"
+        } else {
+          author
+        },
+        description,
+        payload.book_id
+      ],
+    )
+    .map_err(|err| format!("failed to update book metadata: {err}"))?;
+
+  if rows_affected == 0 {
+    return Err("book not found".to_string());
+  }
+
+  tx
+    .execute(
+      "DELETE FROM book_tags WHERE book_id = ?1",
+      params![payload.book_id],
+    )
+    .map_err(|err| format!("failed to clear book tags: {err}"))?;
+
+  for tag in tags {
+    tx
+      .execute(
+        "INSERT INTO tags (name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
+        params![tag],
+      )
+      .map_err(|err| format!("failed to upsert tag: {err}"))?;
+
+    let tag_id: i64 = tx
+      .query_row("SELECT id FROM tags WHERE name = ?1", params![tag], |row| row.get(0))
+      .map_err(|err| format!("failed to fetch tag id: {err}"))?;
+
+    tx
+      .execute(
+        "INSERT INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
+        params![payload.book_id, tag_id],
+      )
+      .map_err(|err| format!("failed to assign tag to book: {err}"))?;
+  }
+
+  tx
+    .commit()
+    .map_err(|err| format!("failed to commit update_book_metadata transaction: {err}"))?;
 
   Ok(())
 }

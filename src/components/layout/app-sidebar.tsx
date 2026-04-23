@@ -36,7 +36,7 @@ export function AppSidebar() {
         ))}
       </nav>
       <div className="rounded-lg border border-dashed border-border bg-background/70 p-3">
-        <p className="text-xs text-muted-foreground">Arraste arquivos EPUB/PDF aqui nas próximas fases.</p>
+        <p className="text-xs text-muted-foreground">Arraste e solte arquivos EPUB/PDF na janela para importar.</p>
       </div>
     </aside>
   )

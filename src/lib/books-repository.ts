@@ -13,6 +13,24 @@ type BookDto = {
   tags: string[]
 }
 
+type ImportRejection = {
+  fileName: string
+  reason: string
+}
+
+export type ImportBooksResult = {
+  importedCount: number
+  rejected: ImportRejection[]
+}
+
+export type UpdateBookMetadataInput = {
+  bookId: number
+  title: string
+  author: string
+  description: string
+  tags: string[]
+}
+
 export async function listBooks(): Promise<Book[]> {
   const books = await invoke<BookDto[]>('list_books')
 
@@ -26,4 +44,12 @@ export async function listBooks(): Promise<Book[]> {
     progress: book.progress,
     tags: book.tags,
   }))
+}
+
+export async function importBooks(paths: string[]): Promise<ImportBooksResult> {
+  return invoke<ImportBooksResult>('import_books', { paths })
+}
+
+export async function updateBookMetadata(payload: UpdateBookMetadataInput): Promise<void> {
+  await invoke('update_book_metadata', { payload })
 }

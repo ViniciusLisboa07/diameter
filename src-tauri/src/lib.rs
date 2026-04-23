@@ -19,7 +19,11 @@ pub fn run() {
 
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![db::list_books])
+    .invoke_handler(tauri::generate_handler![
+      db::list_books,
+      db::import_books,
+      db::update_book_metadata
+    ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
