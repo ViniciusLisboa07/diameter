@@ -272,10 +272,10 @@ export function AppShell() {
   }
 
   return (
-    <div className="grid min-h-screen grid-cols-1 gap-4 p-4 lg:grid-cols-[260px_1fr_340px] lg:p-5">
+    <div className="grid h-screen w-full max-w-full grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[260px_minmax(0,1fr)_340px] lg:p-5">
       <AppSidebar />
 
-      <section className="relative flex min-h-0 flex-col gap-4">
+      <section className="relative flex min-h-0 flex-col gap-4 overflow-hidden">
         <TopBar
           theme={theme}
           onToggleTheme={toggleTheme}

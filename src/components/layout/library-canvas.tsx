@@ -16,7 +16,7 @@ type LibraryCanvasProps = {
 export function LibraryCanvas({ books, selectedBookId, viewMode, onSelectBook }: LibraryCanvasProps) {
   if (viewMode === 'list') {
     return (
-      <main className="flex h-full flex-col gap-3 overflow-y-auto pb-2">
+      <main className="flex h-full min-w-0 flex-col gap-3 overflow-x-hidden overflow-y-auto pb-2">
         {books.map((book) => (
           <Card
             key={book.id}
@@ -26,7 +26,7 @@ export function LibraryCanvas({ books, selectedBookId, viewMode, onSelectBook }:
             )}
             onClick={() => onSelectBook(book.id)}
           >
-            <CardContent className="flex items-center gap-4 p-3 sm:p-4">
+            <CardContent className="flex min-w-0 items-center gap-4 p-3 sm:p-4">
               <BookCover book={book} size="sm" />
 
               <div className="min-w-0 flex-1 space-y-1">
@@ -34,7 +34,7 @@ export function LibraryCanvas({ books, selectedBookId, viewMode, onSelectBook }:
                 <p className="truncate text-sm text-muted-foreground">{book.author}</p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-2">
                 <Badge variant="secondary">{book.format}</Badge>
               </div>
             </CardContent>
@@ -45,7 +45,7 @@ export function LibraryCanvas({ books, selectedBookId, viewMode, onSelectBook }:
   }
 
   return (
-    <main className="grid h-full grid-cols-1 gap-4 overflow-y-auto pb-2 md:grid-cols-2 xl:grid-cols-3">
+    <main className="grid h-full min-w-0 grid-cols-1 gap-4 overflow-x-hidden overflow-y-auto pb-2 md:grid-cols-2 xl:grid-cols-3">
       {books.map((book) => (
         <Card
           key={book.id}
