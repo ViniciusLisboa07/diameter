@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 42 33% 96%;
+    --foreground: 220 20% 16%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 20% 16%;
+    --primary: 193 72% 30%;
+    --primary-foreground: 193 100% 97%;
+    --secondary: 36 58% 92%;
+    --secondary-foreground: 24 30% 28%;
+    --muted: 40 30% 92%;
+    --muted-foreground: 218 18% 38%;
+    --accent: 28 64% 88%;
+    --accent-foreground: 24 30% 22%;
+    --border: 32 27% 86%;
+    --input: 34 20% 82%;
+    --ring: 193 72% 30%;
+    --radius: 0.85rem;
+  }
+
+  .dark {
+    --background: 215 25% 11%;
+    --foreground: 32 30% 92%;
+    --card: 216 24% 15%;
+    --card-foreground: 32 25% 93%;
+    --primary: 186 63% 62%;
+    --primary-foreground: 210 40% 10%;
+    --secondary: 214 19% 19%;
+    --secondary-foreground: 35 25% 88%;
+    --muted: 214 20% 17%;
+    --muted-foreground: 216 12% 67%;
+    --accent: 19 36% 28%;
+    --accent-foreground: 26 45% 88%;
+    --border: 215 18% 24%;
+    --input: 214 15% 26%;
+    --ring: 186 63% 62%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply min-h-screen bg-background font-sans text-foreground antialiased;
+    background-image: radial-gradient(circle at 10% 8%, rgba(56, 189, 248, 0.12), transparent 35%),
+      radial-gradient(circle at 92% 88%, rgba(251, 191, 36, 0.1), transparent 36%);
+  }
+
+  #root {
+    @apply min-h-screen;
+  }
+}
