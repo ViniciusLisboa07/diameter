@@ -44,6 +44,7 @@ pub struct UpdateBookMetadataInput {
 pub struct EpubChapterDto {
   pub title: String,
   pub content: String,
+  pub html: String,
 }
 
 #[derive(Debug, Serialize)]

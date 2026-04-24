@@ -56,3 +56,199 @@
     @apply min-h-screen;
   }
 }
+
+@layer components {
+  .reader-shell {
+    background-attachment: fixed;
+  }
+
+  .reader-shell-paper {
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(141, 95, 50, 0.12), transparent 28rem),
+      radial-gradient(circle at 88% 18%, rgba(30, 103, 113, 0.1), transparent 24rem),
+      linear-gradient(180deg, rgba(255, 250, 240, 0.48), rgba(246, 239, 225, 0));
+  }
+
+  .reader-shell-night {
+    background-image:
+      radial-gradient(circle at 12% 8%, rgba(217, 178, 111, 0.12), transparent 28rem),
+      radial-gradient(circle at 88% 18%, rgba(76, 123, 154, 0.18), transparent 24rem),
+      linear-gradient(180deg, rgba(24, 33, 49, 0.55), rgba(15, 23, 36, 0));
+  }
+
+  .reader-floating-nav {
+    opacity: 0.56;
+  }
+
+  .reader-floating-nav:hover,
+  .reader-floating-nav:focus-visible {
+    opacity: 1;
+    transform: translateY(-1px) scale(1.03);
+  }
+
+  .reader-floating-nav:disabled {
+    cursor: not-allowed;
+    opacity: 0.18;
+    transform: none;
+  }
+
+  .epub-content {
+    color: inherit;
+    font-size: clamp(1.0625rem, 0.98rem + 0.28vw, 1.1875rem);
+    line-height: 1.9;
+    letter-spacing: 0.002em;
+    overflow-wrap: break-word;
+  }
+
+  .epub-content > :first-child {
+    margin-top: 0;
+  }
+
+  .epub-content > :last-child {
+    margin-bottom: 0;
+  }
+
+  .epub-content :where(h1, h2, h3) {
+    @apply font-display;
+    clear: both;
+    line-height: 1.12;
+    letter-spacing: -0.025em;
+  }
+
+  .epub-content h1 {
+    margin: 3.5rem 0 1.35rem;
+    font-size: clamp(2rem, 1.62rem + 1.3vw, 2.875rem);
+  }
+
+  .epub-content h2 {
+    margin: 3rem 0 1.1rem;
+    font-size: clamp(1.55rem, 1.34rem + 0.72vw, 2.125rem);
+  }
+
+  .epub-content h3 {
+    margin: 2.35rem 0 0.85rem;
+    font-size: clamp(1.22rem, 1.12rem + 0.36vw, 1.5rem);
+    letter-spacing: -0.012em;
+  }
+
+  .epub-content p {
+    margin: 1.15rem 0;
+  }
+
+  .epub-content p + p {
+    margin-top: 1.35rem;
+  }
+
+  .epub-content :where(ul, ol) {
+    margin: 1.35rem 0 1.6rem;
+    padding-left: 1.6rem;
+  }
+
+  .epub-content :where(li) {
+    margin: 0.45rem 0;
+    padding-left: 0.15rem;
+  }
+
+  .epub-content ul {
+    list-style-type: disc;
+  }
+
+  .epub-content ol {
+    list-style-type: decimal;
+  }
+
+  .epub-content blockquote {
+    margin: 2rem 0;
+    border-left-width: 0.25rem;
+    padding: 0.35rem 0 0.35rem 1.35rem;
+    font-family: Fraunces, serif;
+    font-size: clamp(1.18rem, 1.04rem + 0.5vw, 1.5rem);
+    font-style: italic;
+    line-height: 1.65;
+  }
+
+  .epub-content blockquote p {
+    margin: 0.6rem 0;
+  }
+
+  .epub-content img {
+    display: block;
+    width: auto;
+    max-width: min(100%, 44rem);
+    max-height: 72vh;
+    margin: 2.25rem auto;
+    border-radius: 1rem;
+    object-fit: contain;
+  }
+
+  .epub-content :where(figure) {
+    margin: 2.5rem 0;
+  }
+
+  .epub-content :where(figcaption) {
+    margin-top: -1.2rem;
+    text-align: center;
+    font-size: 0.86rem;
+    line-height: 1.5;
+    opacity: 0.72;
+  }
+
+  .epub-content hr {
+    width: 7rem;
+    margin: 3rem auto;
+    border: 0;
+    border-top: 1px solid currentColor;
+    opacity: 0.22;
+  }
+
+  .epub-content :where(a) {
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.2em;
+  }
+
+  .epub-content-plain {
+    @apply space-y-0;
+  }
+
+  .epub-content-paper {
+    color: #3c2f1f;
+  }
+
+  .epub-content-paper :where(h1, h2, h3) {
+    color: #2a2115;
+  }
+
+  .epub-content-paper blockquote {
+    border-color: rgba(141, 95, 50, 0.5);
+    color: #4d3820;
+  }
+
+  .epub-content-paper img {
+    box-shadow: 0 18px 50px rgba(89, 68, 39, 0.16);
+  }
+
+  .epub-content-paper a {
+    color: #7a4f22;
+  }
+
+  .epub-content-night {
+    color: #ded6c8;
+  }
+
+  .epub-content-night :where(h1, h2, h3) {
+    color: #f7ead0;
+  }
+
+  .epub-content-night blockquote {
+    border-color: rgba(217, 178, 111, 0.55);
+    color: #ead7b4;
+  }
+
+  .epub-content-night img {
+    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.34);
+  }
+
+  .epub-content-night a {
+    color: #e5c17d;
+  }
+}

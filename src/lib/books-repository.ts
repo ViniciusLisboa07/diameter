@@ -23,6 +23,7 @@ type ImportRejection = {
 type EpubChapter = {
   title: string
   content: string
+  html?: string
 }
 
 export type EpubReadResult = {
