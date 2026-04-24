@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { useTheme } from '@/hooks/use-theme'
 import {
+  deleteBook,
   importBooks,
   listBooks,
   readEpub,
@@ -58,6 +59,7 @@ export function AppShell() {
   const [isImporting, setIsImporting] = useState(false)
   const [importFeedback, setImportFeedback] = useState<string | null>(null)
   const [isOpeningReader, setIsOpeningReader] = useState(false)
+  const [isDeletingBook, setIsDeletingBook] = useState(false)
   const [readerError, setReaderError] = useState<string | null>(null)
   const [activeReader, setActiveReader] = useState<EpubReadResult | null>(null)
   const importInFlightRef = useRef(false)
@@ -121,6 +123,29 @@ export function AppShell() {
       setReaderError(message)
     } finally {
       setIsOpeningReader(false)
+    }
+  }, [])
+
+  const handleDeleteBook = useCallback(async (bookId: number) => {
+    const confirmed = window.confirm('Tem certeza que deseja excluir este livro? Esta ação não pode ser desfeita.')
+    if (!confirmed) {
+      return
+    }
+
+    setIsDeletingBook(true)
+    setReaderError(null)
+
+    try {
+      await deleteBook(bookId)
+
+      setBooks((currentBooks) => currentBooks.filter((book) => book.id !== bookId))
+      setActiveReader((currentReader) => (currentReader?.bookId === bookId ? null : currentReader))
+      setImportFeedback('Livro excluído com sucesso.')
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao excluir livro.'
+      setReaderError(message)
+    } finally {
+      setIsDeletingBook(false)
     }
   }, [])
 
@@ -382,7 +407,9 @@ export function AppShell() {
           book={selectedBook}
           onSaveMetadata={handleSaveMetadata}
           onReadBook={handleOpenReader}
+          onDeleteBook={handleDeleteBook}
           isOpeningReader={isOpeningReader}
+          isDeletingBook={isDeletingBook}
         />
       ) : (
         <Card className="h-full border bg-card/85">

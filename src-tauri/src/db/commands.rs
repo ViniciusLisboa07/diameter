@@ -11,6 +11,10 @@ pub fn import_books(app: AppHandle, paths: Vec<String>) -> Result<ImportBooksRes
   service::import_books(app, paths)
 }
 
+pub fn delete_book(app: AppHandle, book_id: i64) -> Result<(), String> {
+  service::delete_book(app, book_id)
+}
+
 pub fn update_book_metadata(app: AppHandle, payload: UpdateBookMetadataInput) -> Result<(), String> {
   let mut conn = open_connection(&app)?;
   repository::update_book_metadata(&mut conn, payload)
@@ -31,6 +35,5 @@ pub fn save_reading_progress(
 }
 
 pub fn list_books(app: AppHandle) -> Result<Vec<BookDto>, String> {
-  let conn = open_connection(&app)?;
-  repository::list_books(&conn)
+  service::list_books(app)
 }

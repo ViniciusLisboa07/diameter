@@ -21,7 +21,9 @@ type BookDetailsPanelProps = {
   book: Book
   onSaveMetadata: (bookId: number, draft: MetadataDraft) => Promise<void>
   onReadBook: (bookId: number) => Promise<void>
+  onDeleteBook: (bookId: number) => Promise<void>
   isOpeningReader: boolean
+  isDeletingBook: boolean
 }
 
 function parseTags(tagsInput: string): string[] {
@@ -41,7 +43,14 @@ function areTagArraysEqual(left: string[], right: string[]): boolean {
   return left.every((tag, index) => tag === right[index])
 }
 
-export function BookDetailsPanel({ book, onSaveMetadata, onReadBook, isOpeningReader }: BookDetailsPanelProps) {
+export function BookDetailsPanel({
+  book,
+  onSaveMetadata,
+  onReadBook,
+  onDeleteBook,
+  isOpeningReader,
+  isDeletingBook,
+}: BookDetailsPanelProps) {
   const [title, setTitle] = useState(book.title)
   const [author, setAuthor] = useState(book.author)
   const [description, setDescription] = useState(book.description)
@@ -123,10 +132,18 @@ export function BookDetailsPanel({ book, onSaveMetadata, onReadBook, isOpeningRe
 
           <Button
             onClick={() => onReadBook(book.id)}
-            disabled={book.format !== 'EPUB' || !book.isEpubAvailable || isOpeningReader}
+            disabled={book.format !== 'EPUB' || !book.isEpubAvailable || isOpeningReader || isDeletingBook}
             className="w-full"
           >
             {isOpeningReader ? 'Abrindo reader...' : book.progress > 0 ? 'Continuar leitura' : 'Ler'}
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => void onDeleteBook(book.id)}
+            disabled={isDeletingBook}
+            className="w-full border-red-300 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+          >
+            {isDeletingBook ? 'Excluindo...' : 'Excluir livro'}
           </Button>
           {book.format === 'EPUB' && !book.isEpubAvailable && (
             <p className="text-xs text-muted-foreground">Este EPUB ainda não tem arquivo local legível no app.</p>

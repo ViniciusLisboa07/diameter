@@ -24,3 +24,5 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 tauri = { version = "2.10.3", features = [] }
 tauri-plugin-log = "2"
 zip = "2.4.2"
+base64 = "0.22.1"
+roxmltree = "0.20.0"

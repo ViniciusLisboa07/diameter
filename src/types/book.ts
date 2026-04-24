@@ -6,6 +6,7 @@ export type Book = {
   year: number
   progress: number
   description: string
+  coverImageData?: string | null
   tags: string[]
   isEpubAvailable: boolean
 }

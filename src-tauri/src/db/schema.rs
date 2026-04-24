@@ -16,6 +16,7 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), String> {
       title TEXT NOT NULL,
       author TEXT NOT NULL,
       description TEXT NOT NULL DEFAULT '',
+      cover_image_data TEXT,
       publication_year INTEGER NOT NULL,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -55,6 +56,8 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), String> {
     )
     .map_err(|err| format!("failed to run schema migration: {err}"))?;
 
+  ensure_optional_columns(&conn)?;
+
   let books_count: i64 = conn
     .query_row("SELECT COUNT(1) FROM books", [], |row| row.get(0))
     .map_err(|err| format!("failed to count books: {err}"))?;
@@ -64,6 +67,37 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), String> {
   }
 
   Ok(())
+}
+
+fn ensure_optional_columns(conn: &Connection) -> Result<(), String> {
+  if !has_column(conn, "books", "cover_image_data")? {
+    conn
+      .execute("ALTER TABLE books ADD COLUMN cover_image_data TEXT", [])
+      .map_err(|err| format!("failed to add books.cover_image_data column: {err}"))?;
+  }
+
+  Ok(())
+}
+
+fn has_column(conn: &Connection, table_name: &str, column_name: &str) -> Result<bool, String> {
+  let query = format!("PRAGMA table_info({table_name})");
+
+  let mut stmt = conn
+    .prepare(&query)
+    .map_err(|err| format!("failed to prepare table_info for {table_name}: {err}"))?;
+
+  let rows = stmt
+    .query_map([], |row| row.get::<_, String>(1))
+    .map_err(|err| format!("failed to inspect columns for {table_name}: {err}"))?;
+
+  for row in rows {
+    let name = row.map_err(|err| format!("failed to parse table_info row: {err}"))?;
+    if name == column_name {
+      return Ok(true);
+    }
+  }
+
+  Ok(false)
 }
 
 fn seed_database(conn: &Connection) -> Result<(), String> {

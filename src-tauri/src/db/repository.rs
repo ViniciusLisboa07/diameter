@@ -4,11 +4,17 @@ use rusqlite::{params, Connection};
 
 use super::types::{BookDto, UpdateBookMetadataInput};
 
-pub fn insert_imported_book(conn: &Connection, title: &str, format: &str, file_path: &str) -> Result<(), String> {
+pub fn insert_imported_book(
+  conn: &Connection,
+  title: &str,
+  format: &str,
+  file_path: &str,
+  cover_image_data: Option<&str>,
+) -> Result<(), String> {
   conn
     .execute(
-      "INSERT INTO books (title, author, description, publication_year) VALUES (?1, ?2, ?3, ?4)",
-      params![title, "Autor desconhecido", "", 0_i64],
+      "INSERT INTO books (title, author, description, publication_year, cover_image_data) VALUES (?1, ?2, ?3, ?4, ?5)",
+      params![title, "Autor desconhecido", "", 0_i64, cover_image_data],
     )
     .map_err(|err| format!("failed to create imported book: {err}"))?;
 
@@ -27,6 +33,113 @@ pub fn insert_imported_book(conn: &Connection, title: &str, format: &str, file_p
       params![book_id, 0_i64, Option::<String>::None],
     )
     .map_err(|err| format!("failed to create imported reading progress: {err}"))?;
+
+  Ok(())
+}
+
+pub fn list_book_file_paths(conn: &Connection, book_id: i64) -> Result<Vec<String>, String> {
+  let mut stmt = conn
+    .prepare(
+      r#"
+      SELECT file_path
+      FROM book_formats
+      WHERE book_id = ?1
+        AND file_path IS NOT NULL
+      "#,
+    )
+    .map_err(|err| format!("failed to prepare list_book_file_paths query: {err}"))?;
+
+  let rows = stmt
+    .query_map(params![book_id], |row| row.get::<_, String>(0))
+    .map_err(|err| format!("failed to execute list_book_file_paths query: {err}"))?;
+
+  let mut paths = Vec::new();
+  for row in rows {
+    paths.push(row.map_err(|err| format!("failed to parse list_book_file_paths row: {err}"))?);
+  }
+
+  Ok(paths)
+}
+
+pub fn list_books_missing_cover_sources(conn: &Connection) -> Result<Vec<(i64, String, String)>, String> {
+  let mut stmt = conn
+    .prepare(
+      r#"
+      SELECT
+        b.id,
+        (
+          SELECT bf.format
+          FROM book_formats bf
+          WHERE bf.book_id = b.id
+            AND bf.file_path IS NOT NULL
+          ORDER BY bf.id ASC
+          LIMIT 1
+        ) AS format,
+        (
+          SELECT bf.file_path
+          FROM book_formats bf
+          WHERE bf.book_id = b.id
+            AND bf.file_path IS NOT NULL
+          ORDER BY bf.id ASC
+          LIMIT 1
+        ) AS file_path
+      FROM books b
+      WHERE (b.cover_image_data IS NULL OR b.cover_image_data = '')
+        AND EXISTS (
+          SELECT 1
+          FROM book_formats bf2
+          WHERE bf2.book_id = b.id
+            AND bf2.file_path IS NOT NULL
+            AND bf2.format IN ('EPUB', 'PDF')
+        )
+      ORDER BY b.id ASC
+      "#,
+    )
+    .map_err(|err| format!("failed to prepare list_books_missing_cover_sources query: {err}"))?;
+
+  let rows = stmt
+    .query_map([], |row| {
+      let book_id: i64 = row.get(0)?;
+      let format: Option<String> = row.get(1)?;
+      let file_path: Option<String> = row.get(2)?;
+      Ok((book_id, format.unwrap_or_default(), file_path.unwrap_or_default()))
+    })
+    .map_err(|err| format!("failed to execute list_books_missing_cover_sources query: {err}"))?;
+
+  let mut books = Vec::new();
+  for row in rows {
+    let (book_id, format, file_path) =
+      row.map_err(|err| format!("failed to parse list_books_missing_cover_sources row: {err}"))?;
+
+    if format.is_empty() || file_path.is_empty() {
+      continue;
+    }
+
+    books.push((book_id, format, file_path));
+  }
+
+  Ok(books)
+}
+
+pub fn update_book_cover_image(conn: &Connection, book_id: i64, cover_image_data: &str) -> Result<(), String> {
+  conn
+    .execute(
+      "UPDATE books SET cover_image_data = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+      params![cover_image_data, book_id],
+    )
+    .map_err(|err| format!("failed to update cover image for book {book_id}: {err}"))?;
+
+  Ok(())
+}
+
+pub fn delete_book_by_id(conn: &Connection, book_id: i64) -> Result<(), String> {
+  let rows_affected = conn
+    .execute("DELETE FROM books WHERE id = ?1", params![book_id])
+    .map_err(|err| format!("failed to delete book: {err}"))?;
+
+  if rows_affected == 0 {
+    return Err("book not found".to_string());
+  }
 
   Ok(())
 }
@@ -150,6 +263,7 @@ pub fn list_books(conn: &Connection) -> Result<Vec<BookDto>, String> {
         b.title,
         b.author,
         b.description,
+        b.cover_image_data,
         b.publication_year,
         COALESCE((
           SELECT bf.format
@@ -180,11 +294,12 @@ pub fn list_books(conn: &Connection) -> Result<Vec<BookDto>, String> {
         title: row.get(1)?,
         author: row.get(2)?,
         description: row.get(3)?,
-        year: row.get(4)?,
-        format: row.get(5)?,
-        progress: row.get(6)?,
+        cover_image_data: row.get(4)?,
+        year: row.get(5)?,
+        format: row.get(6)?,
+        progress: row.get(7)?,
         tags: Vec::new(),
-        is_epub_available: row.get(7)?,
+        is_epub_available: row.get(8)?,
       })
     })
     .map_err(|err| format!("failed to execute list_books query: {err}"))?;

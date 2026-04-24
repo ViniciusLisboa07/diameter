@@ -1,5 +1,6 @@
 mod commands;
 mod connection;
+mod cover;
 mod epub;
 mod repository;
 mod schema;
@@ -13,6 +14,11 @@ use tauri::AppHandle;
 #[tauri::command]
 pub fn import_books(app: AppHandle, paths: Vec<String>) -> Result<types::ImportBooksResult, String> {
   commands::import_books(app, paths)
+}
+
+#[tauri::command]
+pub fn delete_book(app: AppHandle, book_id: i64) -> Result<(), String> {
+  commands::delete_book(app, book_id)
 }
 
 #[tauri::command]

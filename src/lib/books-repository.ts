@@ -7,6 +7,7 @@ type BookDto = {
   title: string
   author: string
   description: string
+  coverImageData?: string | null
   format: string
   year: number
   progress: number
@@ -53,6 +54,7 @@ export async function listBooks(): Promise<Book[]> {
     title: book.title,
     author: book.author,
     description: book.description,
+    coverImageData: book.coverImageData,
     format: book.format,
     year: book.year,
     progress: book.progress,
@@ -63,6 +65,10 @@ export async function listBooks(): Promise<Book[]> {
 
 export async function importBooks(paths: string[]): Promise<ImportBooksResult> {
   return invoke<ImportBooksResult>('import_books', { paths })
+}
+
+export async function deleteBook(bookId: number): Promise<void> {
+  await invoke('delete_book', { bookId })
 }
 
 export async function updateBookMetadata(payload: UpdateBookMetadataInput): Promise<void> {

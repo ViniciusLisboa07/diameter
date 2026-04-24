@@ -22,6 +22,7 @@ pub fn run() {
     .invoke_handler(tauri::generate_handler![
       db::list_books,
       db::import_books,
+      db::delete_book,
       db::update_book_metadata,
       db::read_epub,
       db::save_reading_progress

@@ -8,9 +8,10 @@ use tauri::AppHandle;
 
 use super::{
   connection::{library_dir, open_connection},
+  cover::extract_cover_image_data_uri,
   epub::{parse_last_chapter_index, read_epub_file},
   repository,
-  types::{EpubReadDto, ImportBooksResult, ImportRejection},
+  types::{BookDto, EpubReadDto, ImportBooksResult, ImportRejection},
 };
 
 pub fn import_books(app: AppHandle, paths: Vec<String>) -> Result<ImportBooksResult, String> {
@@ -56,8 +57,15 @@ pub fn import_books(app: AppHandle, paths: Vec<String>) -> Result<ImportBooksRes
 
     let destination_text = destination.to_string_lossy().to_string();
     let book_title = normalize_book_title(&source_path);
+    let cover_image_data = extract_cover_image_data_uri(&destination, format);
 
-    if let Err(err) = repository::insert_imported_book(&conn, &book_title, format, &destination_text) {
+    if let Err(err) = repository::insert_imported_book(
+      &conn,
+      &book_title,
+      format,
+      &destination_text,
+      cover_image_data.as_deref(),
+    ) {
       let _ = fs::remove_file(&destination);
       rejected.push(ImportRejection {
         file_name,
@@ -73,6 +81,24 @@ pub fn import_books(app: AppHandle, paths: Vec<String>) -> Result<ImportBooksRes
     imported_count,
     rejected,
   })
+}
+
+pub fn delete_book(app: AppHandle, book_id: i64) -> Result<(), String> {
+  let conn = open_connection(&app)?;
+
+  let file_paths = repository::list_book_file_paths(&conn, book_id)?;
+  repository::delete_book_by_id(&conn, book_id)?;
+
+  for path in file_paths {
+    let file_path = PathBuf::from(path);
+
+    if file_path.exists() {
+      fs::remove_file(&file_path)
+        .map_err(|err| format!("book removed from database but failed deleting local file: {err}"))?;
+    }
+  }
+
+  Ok(())
 }
 
 pub fn read_epub(app: AppHandle, book_id: i64) -> Result<EpubReadDto, String> {
@@ -94,6 +120,24 @@ pub fn read_epub(app: AppHandle, book_id: i64) -> Result<EpubReadDto, String> {
     last_chapter_index,
     progress_percent,
   })
+}
+
+pub fn list_books(app: AppHandle) -> Result<Vec<BookDto>, String> {
+  let conn = open_connection(&app)?;
+  let missing_cover_sources = repository::list_books_missing_cover_sources(&conn)?;
+
+  for (book_id, format, file_path) in missing_cover_sources {
+    let path = PathBuf::from(&file_path);
+    if !path.exists() {
+      continue;
+    }
+
+    if let Some(cover_image_data) = extract_cover_image_data_uri(&path, &format) {
+      repository::update_book_cover_image(&conn, book_id, &cover_image_data)?;
+    }
+  }
+
+  repository::list_books(&conn)
 }
 
 fn normalize_book_title(file_path: &Path) -> String {

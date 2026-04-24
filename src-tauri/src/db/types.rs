@@ -7,6 +7,7 @@ pub struct BookDto {
   pub title: String,
   pub author: String,
   pub description: String,
+  pub cover_image_data: Option<String>,
   pub format: String,
   pub year: i64,
   pub progress: i64,
