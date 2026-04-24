@@ -113,6 +113,11 @@ export function EpubReaderScreen({
         return
       }
 
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        onBack()
+      }
+
       if (event.key === 'ArrowLeft' && canGoToPreviousChapter) {
         event.preventDefault()
         goToPreviousChapter()
@@ -126,7 +131,7 @@ export function EpubReaderScreen({
 
     window.addEventListener('keydown', handleReaderKeyDown)
     return () => window.removeEventListener('keydown', handleReaderKeyDown)
-  }, [canGoToNextChapter, canGoToPreviousChapter, goToNextChapter, goToPreviousChapter])
+  }, [canGoToNextChapter, canGoToPreviousChapter, goToNextChapter, goToPreviousChapter, onBack])
 
   return (
     <section
