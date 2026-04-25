@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, ListTree, Palette } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, ListTree, Palette, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -85,6 +85,7 @@ export function EpubReaderScreen({
 }: EpubReaderScreenProps) {
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>('paper')
   const [isChapterListOpen, setIsChapterListOpen] = useState(false)
+  const [isDesktopChapterSidebarCollapsed, setIsDesktopChapterSidebarCollapsed] = useState(true)
   const [currentChapterIndex, setCurrentChapterIndex] = useState(() =>
     Math.max(0, Math.min(initialChapterIndex, chapters.length - 1)),
   )
@@ -209,7 +210,7 @@ export function EpubReaderScreen({
         readerThemeStyles[readerTheme],
         readerTheme === 'night' ? 'reader-shell-night' : 'reader-shell-paper',
       )}
-      >
+    >
       {isChapterListOpen ? (
         <button
           type="button"
@@ -222,16 +223,39 @@ export function EpubReaderScreen({
       <aside
         id="reader-chapter-sidebar"
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-[19rem] max-w-[calc(100vw-2rem)] flex-col border-r px-4 py-5 backdrop-blur-2xl transition-transform duration-200 lg:translate-x-0',
+          'fixed inset-y-0 left-0 z-40 flex w-[19rem] max-w-[calc(100vw-2rem)] flex-col border-r px-4 py-5 backdrop-blur-2xl transition-transform duration-200 lg:translate-x-0 lg:transition-[width,padding] lg:duration-200',
           isChapterListOpen ? 'translate-x-0' : '-translate-x-full',
+          isDesktopChapterSidebarCollapsed ? 'lg:w-[5.25rem] lg:px-3' : 'lg:w-[19rem] lg:px-4',
           readerSidebarStyles[readerTheme],
         )}
       >
-        <div className="mb-5 flex items-start justify-between gap-3">
-          <div>
+        <div
+          className={cn(
+            'mb-5 flex items-start justify-between gap-3',
+            isDesktopChapterSidebarCollapsed ? 'lg:flex-col lg:items-center lg:gap-4' : null,
+          )}
+        >
+          <div className={cn(isDesktopChapterSidebarCollapsed ? 'lg:hidden' : null)}>
             <p className="text-xs font-semibold uppercase tracking-[0.24em] opacity-55">Sumário</p>
             <h2 className="mt-2 line-clamp-2 font-display text-2xl leading-tight">{bookTitle}</h2>
           </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label={isDesktopChapterSidebarCollapsed ? 'Expandir sumário' : 'Recolher sumário'}
+            aria-expanded={!isDesktopChapterSidebarCollapsed}
+            aria-controls="reader-chapter-list"
+            title={isDesktopChapterSidebarCollapsed ? 'Expandir sumário' : 'Recolher sumário'}
+            className="hidden lg:inline-flex"
+            onClick={() => setIsDesktopChapterSidebarCollapsed((current) => !current)}
+          >
+            {isDesktopChapterSidebarCollapsed ? (
+              <PanelLeftOpen className="h-5 w-5" />
+            ) : (
+              <PanelLeftClose className="h-5 w-5" />
+            )}
+          </Button>
           <Button
             type="button"
             variant="ghost"
@@ -244,51 +268,96 @@ export function EpubReaderScreen({
           </Button>
         </div>
 
-        <p className="mb-3 text-sm opacity-70">
-          {chapters.length} {chapters.length === 1 ? 'seção' : 'seções'}
-        </p>
+        <div
+          className={cn(
+            'hidden min-h-0 flex-1 flex-col items-center gap-4 lg:flex',
+            isDesktopChapterSidebarCollapsed ? null : 'lg:hidden',
+          )}
+        >
+          <button
+            type="button"
+            aria-current="page"
+            aria-label={`Capítulo atual: ${currentChapter.title}`}
+            onClick={() => setIsDesktopChapterSidebarCollapsed(false)}
+            className={cn(
+              'flex h-12 w-12 items-center justify-center rounded-2xl border text-sm font-semibold transition-colors',
+              readerSidebarItemStyles[readerTheme].active,
+            )}
+            title={currentChapter.title}
+          >
+            {currentChapterIndex + 1}
+          </button>
+          <div className="h-px w-8 bg-current/15" />
+          <p className="origin-center rotate-180 text-center text-[0.68rem] font-semibold uppercase tracking-[0.18em] opacity-55 [writing-mode:vertical-rl]">
+            Sumário
+          </p>
+        </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto pr-1">{chapterList}</div>
+        <div
+          id="reader-chapter-list"
+          className={cn(
+            'min-h-0 flex-1 overflow-y-auto pr-1',
+            isDesktopChapterSidebarCollapsed ? 'lg:hidden' : null,
+          )}
+        >
+          <p className="mb-3 text-sm opacity-70">
+            {chapters.length} {chapters.length === 1 ? 'seção' : 'seções'}
+          </p>
+          {chapterList}
+        </div>
       </aside>
 
       <nav
         aria-label="Navegação persistente entre capítulos"
-        className="pointer-events-none fixed inset-x-0 inset-y-0 z-20 hidden items-center justify-between px-3 lg:flex lg:pl-[20rem] xl:px-6"
+        className={cn(
+          'pointer-events-none fixed inset-y-0 z-20 hidden items-center lg:flex',
+          isDesktopChapterSidebarCollapsed
+            ? 'lg:left-[5.25rem] lg:w-[calc(100vw-5.25rem)]'
+            : 'lg:left-[19rem] lg:w-[calc(100vw-19rem)]',
+        )}
       >
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Ir para o capítulo anterior"
-          title="Capítulo anterior (seta para esquerda)"
-          onClick={goToPreviousChapter}
-          disabled={!canGoToPreviousChapter}
-          className={cn(
-            'reader-floating-nav pointer-events-auto h-14 w-14 rounded-full border backdrop-blur-xl transition-all duration-200',
-            readerFloatingNavStyles[readerTheme],
-          )}
-        >
-          <ChevronLeft className="h-6 w-6" />
-        </Button>
+        <div className="mx-auto flex w-full max-w-[78rem] items-center justify-between px-3 xl:px-0">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Ir para o capítulo anterior"
+            title="Capítulo anterior (seta para esquerda)"
+            onClick={goToPreviousChapter}
+            disabled={!canGoToPreviousChapter}
+            className={cn(
+              'reader-floating-nav pointer-events-auto h-14 w-14 rounded-full border backdrop-blur-xl transition-all duration-200',
+              readerFloatingNavStyles[readerTheme],
+            )}
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </Button>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Ir para o próximo capítulo"
-          title="Próximo capítulo (seta para direita)"
-          onClick={goToNextChapter}
-          disabled={!canGoToNextChapter}
-          className={cn(
-            'reader-floating-nav pointer-events-auto h-14 w-14 rounded-full border backdrop-blur-xl transition-all duration-200',
-            readerFloatingNavStyles[readerTheme],
-          )}
-        >
-          <ChevronRight className="h-6 w-6" />
-        </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Ir para o próximo capítulo"
+            title="Próximo capítulo (seta para direita)"
+            onClick={goToNextChapter}
+            disabled={!canGoToNextChapter}
+            className={cn(
+              'reader-floating-nav pointer-events-auto h-14 w-14 rounded-full border backdrop-blur-xl transition-all duration-200',
+              readerFloatingNavStyles[readerTheme],
+            )}
+          >
+            <ChevronRight className="h-6 w-6" />
+          </Button>
+        </div>
       </nav>
 
-      <header className={cn('sticky top-0 z-10 border-b backdrop-blur-xl lg:pl-[19rem]', readerHeaderStyles[readerTheme])}>
+      <header
+        className={cn(
+          'sticky top-0 z-10 border-b backdrop-blur-xl',
+          isDesktopChapterSidebarCollapsed ? 'lg:ml-[5.25rem]' : 'lg:ml-[19rem]',
+          readerHeaderStyles[readerTheme],
+        )}
+      >
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onBack}>
@@ -329,7 +398,14 @@ export function EpubReaderScreen({
         </div>
       </header>
 
-      <main className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 sm:px-6 lg:ml-[19rem] lg:mr-0 lg:max-w-[calc(100vw-19rem)] lg:py-12">
+      <main
+        className={cn(
+          'mx-auto flex w-full max-w-5xl flex-1 flex-col gap-8 px-4 py-8 sm:px-6 lg:mr-0 lg:py-12',
+          isDesktopChapterSidebarCollapsed
+            ? 'lg:ml-[5.25rem] lg:max-w-[calc(100vw-5.25rem)]'
+            : 'lg:ml-[19rem] lg:max-w-[calc(100vw-19rem)]',
+        )}
+      >
         <div className="mx-auto w-full max-w-3xl space-y-4">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] opacity-55">Leitura atual</p>
           <h1 className="font-display text-4xl leading-[1.04] tracking-[-0.03em] sm:text-5xl">{bookTitle}</h1>
