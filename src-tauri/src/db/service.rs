@@ -94,8 +94,9 @@ pub fn delete_book(app: AppHandle, book_id: i64) -> Result<(), String> {
     let file_path = PathBuf::from(path);
 
     if file_path.exists() {
-      fs::remove_file(&file_path)
-        .map_err(|err| format!("book removed from database but failed deleting local file: {err}"))?;
+            fs::remove_file(&file_path).map_err(|err| {
+                format!("book removed from database but failed deleting local file: {err}")
+            })?;
     }
   }
 
@@ -108,7 +109,8 @@ pub fn read_epub(app: AppHandle, book_id: i64) -> Result<EpubReadDto, String> {
 
   let db_started_at = Instant::now();
   let conn = open_connection(&app)?;
-  let (book_title, file_path, last_position, progress_percent) = repository::fetch_epub_read_context(&conn, book_id)?;
+    let (book_title, file_path, last_position, progress_percent) =
+        repository::fetch_epub_read_context(&conn, book_id)?;
   log::info!(
     "[reader/open] backend book data fetched book_id={} elapsed_ms={}",
     book_id,
@@ -195,7 +197,10 @@ fn normalize_book_title(file_path: &Path) -> String {
 }
 
 fn resolve_format(file_path: &Path) -> Option<&'static str> {
-  let ext = file_path.extension().and_then(OsStr::to_str)?.to_lowercase();
+    let ext = file_path
+        .extension()
+        .and_then(OsStr::to_str)?
+        .to_lowercase();
 
   match ext.as_str() {
     "epub" => Some("EPUB"),

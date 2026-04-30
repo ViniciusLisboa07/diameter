@@ -173,7 +173,6 @@ fn build_chapter(
 
     Ok(Some(EpubChapterDto {
         title,
-        content,
         html: sanitized_html,
     }))
 }

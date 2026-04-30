@@ -8,8 +8,7 @@ type ReaderTheme = 'paper' | 'night'
 
 type ReaderChapter = {
   title: string
-  content: string
-  html?: string
+  html: string
 }
 
 type EpubReaderScreenProps = {
@@ -163,17 +162,6 @@ type ReaderArticleProps = {
 }
 
 const ReaderArticle = memo(function ReaderArticle({ chapter, readerTheme }: ReaderArticleProps) {
-  const plainParagraphs = useMemo(() => {
-    if (chapter.html) {
-      return []
-    }
-
-    return chapter.content
-      .split('\n\n')
-      .map((paragraph) => paragraph.trim())
-      .filter(Boolean)
-  }, [chapter.content, chapter.html])
-
   return (
     <article
       className={cn(
@@ -182,23 +170,10 @@ const ReaderArticle = memo(function ReaderArticle({ chapter, readerTheme }: Read
       )}
     >
       <h2 className="mb-8 font-display text-3xl leading-[1.08] tracking-[-0.02em] sm:text-4xl">{chapter.title}</h2>
-      {chapter.html ? (
-        <div
-          className={cn('epub-content', readerTheme === 'night' ? 'epub-content-night' : 'epub-content-paper')}
-          dangerouslySetInnerHTML={{ __html: chapter.html }}
-        />
-      ) : (
-        <div
-          className={cn(
-            'epub-content epub-content-plain',
-            readerTheme === 'night' ? 'epub-content-night' : 'epub-content-paper',
-          )}
-        >
-          {plainParagraphs.map((paragraph, paragraphIndex) => (
-            <p key={`${chapter.title}-${paragraphIndex}`}>{paragraph}</p>
-          ))}
-        </div>
-      )}
+      <div
+        className={cn('epub-content', readerTheme === 'night' ? 'epub-content-night' : 'epub-content-paper')}
+        dangerouslySetInnerHTML={{ __html: chapter.html }}
+      />
     </article>
   )
 })

@@ -14,7 +14,10 @@ pub fn run() {
 
       let app_handle = app.handle().clone();
       if let Err(err) = db::initialize_database(&app_handle) {
-        return Err(std::io::Error::other(format!("database initialization failed: {err}")).into());
+                return Err(std::io::Error::other(format!(
+                    "database initialization failed: {err}"
+                ))
+                .into());
       }
 
       Ok(())

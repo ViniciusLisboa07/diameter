@@ -9,7 +9,8 @@ fn db_path(app: &AppHandle) -> Result<PathBuf, String> {
     .app_local_data_dir()
     .map_err(|err| format!("failed to get app local data dir: {err}"))?;
 
-  fs::create_dir_all(&app_data_dir).map_err(|err| format!("failed to create app data dir: {err}"))?;
+    fs::create_dir_all(&app_data_dir)
+        .map_err(|err| format!("failed to create app data dir: {err}"))?;
 
   Ok(app_data_dir.join("diameter.sqlite3"))
 }

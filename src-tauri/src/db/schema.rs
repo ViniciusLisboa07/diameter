@@ -6,8 +6,7 @@ use super::connection::open_connection;
 pub fn initialize_database(app: &AppHandle) -> Result<(), String> {
   let conn = open_connection(app)?;
 
-  conn
-    .execute_batch(
+    conn.execute_batch(
       r#"
     PRAGMA foreign_keys = ON;
 
@@ -71,8 +70,7 @@ pub fn initialize_database(app: &AppHandle) -> Result<(), String> {
 
 fn ensure_optional_columns(conn: &Connection) -> Result<(), String> {
   if !has_column(conn, "books", "cover_image_data")? {
-    conn
-      .execute("ALTER TABLE books ADD COLUMN cover_image_data TEXT", [])
+        conn.execute("ALTER TABLE books ADD COLUMN cover_image_data TEXT", [])
       .map_err(|err| format!("failed to add books.cover_image_data column: {err}"))?;
   }
 
@@ -140,89 +138,75 @@ fn seed_database(conn: &Connection) -> Result<(), String> {
     .map_err(|err| format!("failed to insert mock book 3: {err}"))?;
   let book_3_id = conn.last_insert_rowid();
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_formats (book_id, format, file_path) VALUES (?1, ?2, ?3)",
       params![book_1_id, "EPUB", Option::<String>::None],
     )
     .map_err(|err| format!("failed to insert format for book 1: {err}"))?;
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_formats (book_id, format, file_path) VALUES (?1, ?2, ?3)",
       params![book_2_id, "PDF", Option::<String>::None],
     )
     .map_err(|err| format!("failed to insert format for book 2: {err}"))?;
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_formats (book_id, format, file_path) VALUES (?1, ?2, ?3)",
       params![book_3_id, "EPUB", Option::<String>::None],
     )
     .map_err(|err| format!("failed to insert format for book 3: {err}"))?;
 
-  conn
-    .execute("INSERT INTO tags (name) VALUES ('engenharia')", [])
+    conn.execute("INSERT INTO tags (name) VALUES ('engenharia')", [])
     .map_err(|err| format!("failed to insert tag engenharia: {err}"))?;
   let tag_engenharia = conn.last_insert_rowid();
 
-  conn
-    .execute("INSERT INTO tags (name) VALUES ('boas práticas')", [])
+    conn.execute("INSERT INTO tags (name) VALUES ('boas práticas')", [])
     .map_err(|err| format!("failed to insert tag boas práticas: {err}"))?;
   let tag_boas_praticas = conn.last_insert_rowid();
 
-  conn
-    .execute("INSERT INTO tags (name) VALUES ('arquitetura')", [])
+    conn.execute("INSERT INTO tags (name) VALUES ('arquitetura')", [])
     .map_err(|err| format!("failed to insert tag arquitetura: {err}"))?;
   let tag_arquitetura = conn.last_insert_rowid();
 
-  conn
-    .execute("INSERT INTO tags (name) VALUES ('dados')", [])
+    conn.execute("INSERT INTO tags (name) VALUES ('dados')", [])
     .map_err(|err| format!("failed to insert tag dados: {err}"))?;
   let tag_dados = conn.last_insert_rowid();
 
-  conn
-    .execute("INSERT INTO tags (name) VALUES ('clean code')", [])
+    conn.execute("INSERT INTO tags (name) VALUES ('clean code')", [])
     .map_err(|err| format!("failed to insert tag clean code: {err}"))?;
   let tag_clean_code = conn.last_insert_rowid();
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
       params![book_1_id, tag_engenharia],
     )
     .map_err(|err| format!("failed to link tag engenharia to book 1: {err}"))?;
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
       params![book_1_id, tag_boas_praticas],
     )
     .map_err(|err| format!("failed to link tag boas práticas to book 1: {err}"))?;
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
       params![book_2_id, tag_arquitetura],
     )
     .map_err(|err| format!("failed to link tag arquitetura to book 2: {err}"))?;
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
       params![book_2_id, tag_dados],
     )
     .map_err(|err| format!("failed to link tag dados to book 2: {err}"))?;
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
       params![book_3_id, tag_arquitetura],
     )
     .map_err(|err| format!("failed to link tag arquitetura to book 3: {err}"))?;
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
       params![book_3_id, tag_clean_code],
     )

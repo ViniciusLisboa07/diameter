@@ -20,8 +20,7 @@ pub fn insert_imported_book(
 
   let book_id = conn.last_insert_rowid();
 
-  conn
-    .execute(
+    conn.execute(
       "INSERT INTO book_formats (book_id, format, file_path) VALUES (?1, ?2, ?3)",
       params![book_id, format, file_path],
     )
@@ -61,7 +60,9 @@ pub fn list_book_file_paths(conn: &Connection, book_id: i64) -> Result<Vec<Strin
   Ok(paths)
 }
 
-pub fn list_books_missing_cover_sources(conn: &Connection) -> Result<Vec<(i64, String, String)>, String> {
+pub fn list_books_missing_cover_sources(
+    conn: &Connection,
+) -> Result<Vec<(i64, String, String)>, String> {
   let mut stmt = conn
     .prepare(
       r#"
@@ -95,21 +96,30 @@ pub fn list_books_missing_cover_sources(conn: &Connection) -> Result<Vec<(i64, S
       ORDER BY b.id ASC
       "#,
     )
-    .map_err(|err| format!("failed to prepare list_books_missing_cover_sources query: {err}"))?;
+        .map_err(|err| {
+            format!("failed to prepare list_books_missing_cover_sources query: {err}")
+        })?;
 
   let rows = stmt
     .query_map([], |row| {
       let book_id: i64 = row.get(0)?;
       let format: Option<String> = row.get(1)?;
       let file_path: Option<String> = row.get(2)?;
-      Ok((book_id, format.unwrap_or_default(), file_path.unwrap_or_default()))
+            Ok((
+                book_id,
+                format.unwrap_or_default(),
+                file_path.unwrap_or_default(),
+            ))
     })
-    .map_err(|err| format!("failed to execute list_books_missing_cover_sources query: {err}"))?;
+        .map_err(|err| {
+            format!("failed to execute list_books_missing_cover_sources query: {err}")
+        })?;
 
   let mut books = Vec::new();
   for row in rows {
-    let (book_id, format, file_path) =
-      row.map_err(|err| format!("failed to parse list_books_missing_cover_sources row: {err}"))?;
+        let (book_id, format, file_path) = row.map_err(|err| {
+            format!("failed to parse list_books_missing_cover_sources row: {err}")
+        })?;
 
     if format.is_empty() || file_path.is_empty() {
       continue;
@@ -121,9 +131,12 @@ pub fn list_books_missing_cover_sources(conn: &Connection) -> Result<Vec<(i64, S
   Ok(books)
 }
 
-pub fn update_book_cover_image(conn: &Connection, book_id: i64, cover_image_data: &str) -> Result<(), String> {
-  conn
-    .execute(
+pub fn update_book_cover_image(
+    conn: &Connection,
+    book_id: i64,
+    cover_image_data: &str,
+) -> Result<(), String> {
+    conn.execute(
       "UPDATE books SET cover_image_data = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
       params![cover_image_data, book_id],
     )
@@ -144,7 +157,10 @@ pub fn delete_book_by_id(conn: &Connection, book_id: i64) -> Result<(), String> 
   Ok(())
 }
 
-pub fn update_book_metadata(conn: &mut Connection, payload: UpdateBookMetadataInput) -> Result<(), String> {
+pub fn update_book_metadata(
+    conn: &mut Connection,
+    payload: UpdateBookMetadataInput,
+) -> Result<(), String> {
   let tx = conn
     .transaction()
     .map_err(|err| format!("failed to start update_book_metadata transaction: {err}"))?;
@@ -162,7 +178,11 @@ pub fn update_book_metadata(conn: &mut Connection, payload: UpdateBookMetadataIn
       WHERE id = ?4
       "#,
       params![
-        if title.is_empty() { "Livro sem título" } else { title },
+                if title.is_empty() {
+                    "Livro sem título"
+                } else {
+                    title
+                },
         if author.is_empty() {
           "Autor desconhecido"
         } else {
@@ -178,40 +198,45 @@ pub fn update_book_metadata(conn: &mut Connection, payload: UpdateBookMetadataIn
     return Err("book not found".to_string());
   }
 
-  tx
-    .execute("DELETE FROM book_tags WHERE book_id = ?1", params![payload.book_id])
+    tx.execute(
+        "DELETE FROM book_tags WHERE book_id = ?1",
+        params![payload.book_id],
+    )
     .map_err(|err| format!("failed to clear book tags: {err}"))?;
 
   for tag in tags {
-    tx
-      .execute(
+        tx.execute(
         "INSERT INTO tags (name) VALUES (?1) ON CONFLICT(name) DO NOTHING",
         params![&tag],
       )
       .map_err(|err| format!("failed to upsert tag: {err}"))?;
 
     let tag_id: i64 = tx
-      .query_row("SELECT id FROM tags WHERE name = ?1", params![&tag], |row| row.get(0))
+            .query_row(
+                "SELECT id FROM tags WHERE name = ?1",
+                params![&tag],
+                |row| row.get(0),
+            )
       .map_err(|err| format!("failed to fetch tag id: {err}"))?;
 
-    tx
-      .execute(
+        tx.execute(
         "INSERT INTO book_tags (book_id, tag_id) VALUES (?1, ?2)",
         params![payload.book_id, tag_id],
       )
       .map_err(|err| format!("failed to assign tag to book: {err}"))?;
   }
 
-  tx
-    .commit()
+    tx.commit()
     .map_err(|err| format!("failed to commit update_book_metadata transaction: {err}"))?;
 
   Ok(())
 }
 
-pub fn fetch_epub_read_context(conn: &Connection, book_id: i64) -> Result<(String, String, Option<String>, i64), String> {
-  conn
-    .query_row(
+pub fn fetch_epub_read_context(
+    conn: &Connection,
+    book_id: i64,
+) -> Result<(String, String, Option<String>, i64), String> {
+    conn.query_row(
       r#"
       SELECT b.title, bf.file_path, rp.last_position, COALESCE(rp.progress_percent, 0)
       FROM books b
@@ -237,8 +262,7 @@ pub fn upsert_reading_progress(
 ) -> Result<(), String> {
   let bounded_progress = progress_percent.clamp(0, 100);
 
-  conn
-    .execute(
+    conn.execute(
       r#"
       INSERT INTO reading_progress (book_id, progress_percent, last_position, updated_at)
       VALUES (?1, ?2, ?3, CURRENT_TIMESTAMP)

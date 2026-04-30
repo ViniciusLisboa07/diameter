@@ -27,8 +27,8 @@ pub fn update_book_metadata(app: AppHandle, payload: types::UpdateBookMetadataIn
 }
 
 #[tauri::command]
-pub fn read_epub(app: AppHandle, book_id: i64) -> Result<types::EpubReadDto, String> {
-  commands::read_epub(app, book_id)
+pub async fn read_epub(app: AppHandle, book_id: i64) -> Result<types::EpubReadDto, String> {
+  commands::read_epub(app, book_id).await
 }
 
 #[tauri::command]

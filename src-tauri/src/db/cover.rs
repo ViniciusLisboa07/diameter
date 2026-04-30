@@ -108,7 +108,9 @@ fn find_embedded_png_ranges(bytes: &[u8]) -> Vec<ImageRange> {
 
   while index + signature.len() <= bytes.len() {
     if bytes[index..].starts_with(&signature) {
-      if let Some(relative_end) = find_subsequence(&bytes[index + signature.len()..], &iend_marker) {
+            if let Some(relative_end) =
+                find_subsequence(&bytes[index + signature.len()..], &iend_marker)
+            {
         let end = index + signature.len() + relative_end + iend_marker.len();
         if end.saturating_sub(index) >= MIN_PDF_IMAGE_BYTES {
           ranges.push((index, end, "image/png"));
@@ -129,7 +131,9 @@ fn find_subsequence(buffer: &[u8], needle: &[u8]) -> Option<usize> {
     return None;
   }
 
-  buffer.windows(needle.len()).position(|window| window == needle)
+    buffer
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn find_opf_path(container_xml: &str) -> Option<String> {
@@ -187,10 +191,13 @@ fn find_epub_cover_entry(opf_xml: &str) -> Option<(String, Option<String>)> {
   }
 
   if let Some(item) = manifest_items.iter().find(|item| {
-    item
-      .properties
+        item.properties
       .as_deref()
-      .map(|properties| properties.split_whitespace().any(|token| token == "cover-image"))
+            .map(|properties| {
+                properties
+                    .split_whitespace()
+                    .any(|token| token == "cover-image")
+            })
       .unwrap_or(false)
   }) {
     return Some((item.href.clone(), item.media_type.clone()));
@@ -215,8 +222,7 @@ fn find_epub_cover_entry(opf_xml: &str) -> Option<(String, Option<String>)> {
   manifest_items
     .iter()
     .find(|item| {
-      item
-        .media_type
+            item.media_type
         .as_deref()
         .map(|mime| mime.starts_with("image/"))
         .unwrap_or_else(|| mime_from_path(&item.href).is_some())
@@ -259,7 +265,10 @@ fn normalize_archive_path(raw_path: &str) -> String {
   parts.join("/")
 }
 
-fn read_zip_text<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>, path: &str) -> Option<String> {
+fn read_zip_text<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    path: &str,
+) -> Option<String> {
   let normalized_path = normalize_archive_path(path);
   if normalized_path.is_empty() {
     return None;
@@ -271,7 +280,10 @@ fn read_zip_text<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>, path: &st
   Some(content)
 }
 
-fn read_zip_binary<R: Read + std::io::Seek>(archive: &mut ZipArchive<R>, path: &str) -> Option<Vec<u8>> {
+fn read_zip_binary<R: Read + std::io::Seek>(
+    archive: &mut ZipArchive<R>,
+    path: &str,
+) -> Option<Vec<u8>> {
   let normalized_path = normalize_archive_path(path);
   if normalized_path.is_empty() {
     return None;
@@ -288,7 +300,10 @@ fn encode_data_uri(bytes: Vec<u8>, mime_type: &str) -> Option<String> {
     return None;
   }
 
-  Some(format!("data:{mime_type};base64,{}", STANDARD.encode(bytes)))
+    Some(format!(
+        "data:{mime_type};base64,{}",
+        STANDARD.encode(bytes)
+    ))
 }
 
 fn mime_from_path(path: &str) -> Option<&'static str> {

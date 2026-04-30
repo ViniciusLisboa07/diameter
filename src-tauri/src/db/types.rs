@@ -43,7 +43,6 @@ pub struct UpdateBookMetadataInput {
 #[serde(rename_all = "camelCase")]
 pub struct EpubChapterDto {
   pub title: String,
-  pub content: String,
   pub html: String,
 }
 

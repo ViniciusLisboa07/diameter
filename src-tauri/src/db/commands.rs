@@ -20,8 +20,10 @@ pub fn update_book_metadata(app: AppHandle, payload: UpdateBookMetadataInput) ->
   repository::update_book_metadata(&mut conn, payload)
 }
 
-pub fn read_epub(app: AppHandle, book_id: i64) -> Result<EpubReadDto, String> {
-  service::read_epub(app, book_id)
+pub async fn read_epub(app: AppHandle, book_id: i64) -> Result<EpubReadDto, String> {
+  tauri::async_runtime::spawn_blocking(move || service::read_epub(app, book_id))
+    .await
+    .map_err(|err| format!("failed to join EPUB reader task: {err}"))?
 }
 
 pub fn save_reading_progress(
