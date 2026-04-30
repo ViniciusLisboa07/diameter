@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { LoaderCircle } from 'lucide-react'
 
 import type { Book } from '@/types/book'
 
@@ -134,7 +135,9 @@ export function BookDetailsPanel({
             onClick={() => onReadBook(book.id)}
             disabled={book.format !== 'EPUB' || !book.isEpubAvailable || isOpeningReader || isDeletingBook}
             className="w-full"
+            aria-busy={isOpeningReader}
           >
+            {isOpeningReader && <LoaderCircle className="h-4 w-4 animate-spin" />}
             {isOpeningReader ? 'Abrindo reader...' : book.progress > 0 ? 'Continuar leitura' : 'Ler'}
           </Button>
           <Button

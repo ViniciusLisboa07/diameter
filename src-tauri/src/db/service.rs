@@ -2,6 +2,7 @@ use std::{
   ffi::OsStr,
   fs,
   path::{Path, PathBuf},
+  time::Instant,
 };
 
 use tauri::AppHandle;
@@ -102,24 +103,61 @@ pub fn delete_book(app: AppHandle, book_id: i64) -> Result<(), String> {
 }
 
 pub fn read_epub(app: AppHandle, book_id: i64) -> Result<EpubReadDto, String> {
+  let total_started_at = Instant::now();
+  log::info!("[reader/open] backend read_epub started book_id={book_id}");
+
+  let db_started_at = Instant::now();
   let conn = open_connection(&app)?;
   let (book_title, file_path, last_position, progress_percent) = repository::fetch_epub_read_context(&conn, book_id)?;
+  log::info!(
+    "[reader/open] backend book data fetched book_id={} elapsed_ms={}",
+    book_id,
+    db_started_at.elapsed().as_millis()
+  );
 
+  let exists_started_at = Instant::now();
   let epub_path = PathBuf::from(file_path);
   if !epub_path.exists() {
     return Err("arquivo EPUB não encontrado no disco local".to_string());
   }
+  log::info!(
+    "[reader/open] backend EPUB path checked book_id={} elapsed_ms={}",
+    book_id,
+    exists_started_at.elapsed().as_millis()
+  );
 
+  let parse_started_at = Instant::now();
   let chapters = read_epub_file(&epub_path)?;
-  let last_chapter_index = parse_last_chapter_index(last_position, chapters.len());
+  log::info!(
+    "[reader/open] backend EPUB parsed book_id={} chapters={} elapsed_ms={}",
+    book_id,
+    chapters.len(),
+    parse_started_at.elapsed().as_millis()
+  );
 
-  Ok(EpubReadDto {
+  let progress_started_at = Instant::now();
+  let last_chapter_index = parse_last_chapter_index(last_position, chapters.len());
+  log::info!(
+    "[reader/open] backend progress resolved book_id={} elapsed_ms={}",
+    book_id,
+    progress_started_at.elapsed().as_millis()
+  );
+
+  let result = EpubReadDto {
     book_id,
     book_title,
     chapters,
     last_chapter_index,
     progress_percent,
-  })
+  };
+
+  log::info!(
+    "[reader/open] backend read_epub finished book_id={} total_ms={}",
+    book_id,
+    total_started_at.elapsed().as_millis()
+  );
+
+  Ok(result)
 }
 
 pub fn list_books(app: AppHandle) -> Result<Vec<BookDto>, String> {

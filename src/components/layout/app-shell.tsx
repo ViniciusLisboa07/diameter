@@ -1,4 +1,5 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
+import { LoaderCircle } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { AppSidebar } from '@/components/layout/app-sidebar'
@@ -23,6 +24,19 @@ import {
 import { cn } from '@/lib/utils'
 import type { Book } from '@/types/book'
 
+type ReaderOpenTiming = {
+  bookId: number
+  clickStartedAt: number
+  invokeStartedAt: number
+  invokeFinishedAt: number
+}
+
+type PendingReaderOpen = {
+  bookId: number
+  clickStartedAt: number
+  requestId: number
+}
+
 type MetadataDraft = {
   title: string
   author: string
@@ -46,6 +60,16 @@ function summarizeImportResult(result: ImportBooksResult): string {
   return `${result.importedCount} importado(s), ${result.rejected.length} rejeitado(s).`
 }
 
+function waitForReaderLoadingPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        window.setTimeout(resolve, 120)
+      })
+    })
+  })
+}
+
 export function AppShell() {
   const { theme, toggleTheme } = useTheme()
   const [books, setBooks] = useState<Book[]>([])
@@ -62,7 +86,11 @@ export function AppShell() {
   const [isDeletingBook, setIsDeletingBook] = useState(false)
   const [readerError, setReaderError] = useState<string | null>(null)
   const [activeReader, setActiveReader] = useState<EpubReadResult | null>(null)
+  const [readerOpenTiming, setReaderOpenTiming] = useState<ReaderOpenTiming | null>(null)
+  const [pendingReaderOpen, setPendingReaderOpen] = useState<PendingReaderOpen | null>(null)
   const importInFlightRef = useRef(false)
+  const readerOpenRequestIdRef = useRef(0)
+  const startedReaderOpenRequestIdsRef = useRef(new Set<number>())
 
   const loadLibrary = useCallback(async () => {
     setIsLoading(true)
@@ -112,19 +140,72 @@ export function AppShell() {
   }, [])
 
   const handleOpenReader = useCallback(async (bookId: number) => {
+    const clickStartedAt = performance.now()
+    const requestId = readerOpenRequestIdRef.current + 1
+    readerOpenRequestIdRef.current = requestId
+    console.groupCollapsed(`[reader/open] book ${bookId}`)
+    console.info('[reader/open] clique em "Ler" recebido', { bookId })
     setReaderError(null)
+    setReaderOpenTiming(null)
     setIsOpeningReader(true)
-
-    try {
-      const content = await readEpub(bookId)
-      setActiveReader(content)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Falha ao abrir EPUB.'
-      setReaderError(message)
-    } finally {
-      setIsOpeningReader(false)
-    }
+    setPendingReaderOpen({ bookId, clickStartedAt, requestId })
   }, [])
+
+  useEffect(() => {
+    if (!pendingReaderOpen || startedReaderOpenRequestIdsRef.current.has(pendingReaderOpen.requestId)) {
+      return
+    }
+
+    startedReaderOpenRequestIdsRef.current.add(pendingReaderOpen.requestId)
+
+    async function openReader(request: PendingReaderOpen) {
+      await waitForReaderLoadingPaint()
+
+      try {
+        const invokeStartedAt = performance.now()
+        const content = await readEpub(request.bookId)
+        const invokeFinishedAt = performance.now()
+
+        if (readerOpenRequestIdRef.current !== request.requestId) {
+          return
+        }
+
+        setReaderOpenTiming({
+          bookId: request.bookId,
+          clickStartedAt: request.clickStartedAt,
+          invokeStartedAt,
+          invokeFinishedAt,
+        })
+        console.info('[reader/open] Tauri read_epub concluido', {
+          bookId: request.bookId,
+          chapters: content.chapters.length,
+          invokeMs: Math.round(invokeFinishedAt - invokeStartedAt),
+          clickToInvokeEndMs: Math.round(invokeFinishedAt - request.clickStartedAt),
+        })
+        setActiveReader(content)
+      } catch (error) {
+        if (readerOpenRequestIdRef.current !== request.requestId) {
+          return
+        }
+
+        const message = error instanceof Error ? error.message : 'Falha ao abrir EPUB.'
+        console.error('[reader/open] falha ao abrir EPUB', {
+          bookId: request.bookId,
+          elapsedMs: Math.round(performance.now() - request.clickStartedAt),
+          error,
+        })
+        console.groupEnd()
+        setReaderError(message)
+      } finally {
+        if (readerOpenRequestIdRef.current === request.requestId) {
+          setPendingReaderOpen(null)
+          setIsOpeningReader(false)
+        }
+      }
+    }
+
+    void openReader(pendingReaderOpen)
+  }, [pendingReaderOpen])
 
   const handleDeleteBook = useCallback(async (bookId: number) => {
     const confirmed = window.confirm('Tem certeza que deseja excluir este livro? Esta ação não pode ser desfeita.')
@@ -155,24 +236,48 @@ export function AppShell() {
         return
       }
 
+      const readerBookId = activeReader.bookId
       const normalizedProgress = Math.max(0, Math.min(100, progressPercent))
       const lastPosition = `chapter_index:${chapterIndex}`
 
-      await saveReadingProgress(activeReader.bookId, lastPosition, normalizedProgress)
+      const progressStartedAt = performance.now()
+      await saveReadingProgress(readerBookId, lastPosition, normalizedProgress)
+      console.info('[reader/open] progresso de leitura salvo', {
+        bookId: readerBookId,
+        chapterIndex,
+        progressPercent: normalizedProgress,
+        elapsedMs: Math.round(performance.now() - progressStartedAt),
+      })
 
-      setBooks((currentBooks) =>
-        currentBooks.map((book) =>
-          book.id === activeReader.bookId
-            ? {
-                ...book,
-                progress: normalizedProgress,
-              }
-            : book,
-        ),
-      )
+      setBooks((currentBooks) => {
+        let didChange = false
+        const nextBooks = currentBooks.map((book) => {
+          if (book.id !== readerBookId) {
+            return book
+          }
+
+          if (book.progress === normalizedProgress) {
+            return book
+          }
+
+          didChange = true
+          return {
+            ...book,
+            progress: normalizedProgress,
+          }
+        })
+
+        return didChange ? nextBooks : currentBooks
+      })
     },
     [activeReader],
   )
+
+  const handleCloseReader = useCallback(() => {
+    setReaderOpenTiming(null)
+    setActiveReader(null)
+    void loadLibrary()
+  }, [loadLibrary])
 
   useEffect(() => {
     void loadLibrary()
@@ -287,17 +392,15 @@ export function AppShell() {
         bookTitle={activeReader.bookTitle}
         chapters={activeReader.chapters}
         initialChapterIndex={activeReader.lastChapterIndex}
-        onBack={() => {
-          setActiveReader(null)
-          void loadLibrary()
-        }}
+        openTiming={readerOpenTiming?.bookId === activeReader.bookId ? readerOpenTiming : null}
+        onBack={handleCloseReader}
         onProgressChange={handleProgressChange}
       />
     )
   }
 
   return (
-    <div className="grid h-screen w-full max-w-full grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[260px_minmax(0,1fr)_340px] lg:p-5">
+    <div className="relative grid h-screen w-full max-w-full grid-cols-1 gap-4 overflow-hidden p-4 lg:grid-cols-[260px_minmax(0,1fr)_340px] lg:p-5">
       <AppSidebar />
 
       <section className="relative flex min-h-0 flex-col gap-4 overflow-hidden">
@@ -418,6 +521,22 @@ export function AppShell() {
           </CardContent>
         </Card>
       )}
+
+      {isOpeningReader && selectedBook ? (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center bg-background/72 px-4 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex w-full max-w-sm flex-col items-center gap-4 rounded-lg border bg-card px-6 py-7 text-center shadow-soft">
+            <LoaderCircle className="h-7 w-7 animate-spin text-primary" />
+            <div className="space-y-1">
+              <p className="text-sm font-semibold text-foreground">Preparando leitura</p>
+              <p className="line-clamp-2 text-sm text-muted-foreground">{selectedBook.title}</p>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

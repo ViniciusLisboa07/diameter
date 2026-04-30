@@ -4,6 +4,7 @@ use std::{
     fs,
     io::{Read, Seek},
     path::Path,
+    time::Instant,
 };
 
 use regex::Regex;
@@ -27,17 +28,51 @@ struct EpubSection {
 }
 
 pub fn read_epub_file(epub_path: &Path) -> Result<Vec<EpubChapterDto>, String> {
+    let total_started_at = Instant::now();
+    log::info!(
+        "[reader/open] EPUB read started path={}",
+        epub_path.display()
+    );
+
+    let open_started_at = Instant::now();
     let epub_file =
         fs::File::open(epub_path).map_err(|err| format!("failed to open EPUB file: {err}"))?;
+    log::info!(
+        "[reader/open] EPUB file opened elapsed_ms={}",
+        open_started_at.elapsed().as_millis()
+    );
+
+    let zip_started_at = Instant::now();
     let mut archive =
         ZipArchive::new(epub_file).map_err(|err| format!("failed to read EPUB archive: {err}"))?;
+    log::info!(
+        "[reader/open] EPUB ZIP archive initialized entries={} elapsed_ms={}",
+        archive.len(),
+        zip_started_at.elapsed().as_millis()
+    );
 
+    let opf_started_at = Instant::now();
     let opf_path = find_opf_path(&mut archive)?;
+    log::info!(
+        "[reader/open] EPUB OPF path resolved found={} elapsed_ms={}",
+        opf_path.is_some(),
+        opf_started_at.elapsed().as_millis()
+    );
+
+    let package_started_at = Instant::now();
     let (spine_paths, nav_paths, ncx_paths) = match opf_path.as_deref() {
         Some(path) => parse_package_document(&mut archive, path)?,
         None => (Vec::new(), Vec::new(), Vec::new()),
     };
+    log::info!(
+        "[reader/open] EPUB package parsed spine_paths={} nav_paths={} ncx_paths={} elapsed_ms={}",
+        spine_paths.len(),
+        nav_paths.len(),
+        ncx_paths.len(),
+        package_started_at.elapsed().as_millis()
+    );
 
+    let nav_started_at = Instant::now();
     let mut title_by_path = HashMap::new();
     for path in nav_paths.iter().chain(ncx_paths.iter()) {
         if let Some(content) = read_zip_text_entry(&mut archive, path)? {
@@ -53,8 +88,21 @@ pub fn read_epub_file(epub_path: &Path) -> Result<Vec<EpubChapterDto>, String> {
             }
         }
     }
+    log::info!(
+        "[reader/open] EPUB navigation titles parsed titles={} elapsed_ms={}",
+        title_by_path.len(),
+        nav_started_at.elapsed().as_millis()
+    );
 
+    let sections_started_at = Instant::now();
     let sections = read_content_sections(&mut archive, &spine_paths)?;
+    log::info!(
+        "[reader/open] EPUB content sections read sections={} elapsed_ms={}",
+        sections.len(),
+        sections_started_at.elapsed().as_millis()
+    );
+
+    let chapters_started_at = Instant::now();
     let chapters = sections
         .into_iter()
         .enumerate()
@@ -62,10 +110,21 @@ pub fn read_epub_file(epub_path: &Path) -> Result<Vec<EpubChapterDto>, String> {
             build_chapter(section, index + 1, &title_by_path).transpose()
         })
         .collect::<Result<Vec<_>, String>>()?;
+    log::info!(
+        "[reader/open] EPUB chapters built chapters={} elapsed_ms={}",
+        chapters.len(),
+        chapters_started_at.elapsed().as_millis()
+    );
 
     if chapters.is_empty() {
         return Err("não foi possível extrair conteúdo textual deste EPUB".to_string());
     }
+
+    log::info!(
+        "[reader/open] EPUB read finished chapters={} total_ms={}",
+        chapters.len(),
+        total_started_at.elapsed().as_millis()
+    );
 
     Ok(chapters)
 }

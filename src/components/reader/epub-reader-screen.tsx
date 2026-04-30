@@ -1,5 +1,5 @@
 import { ArrowLeft, ChevronLeft, ChevronRight, ListTree, Palette, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -17,6 +17,12 @@ type EpubReaderScreenProps = {
   bookTitle: string
   chapters: ReaderChapter[]
   initialChapterIndex: number
+  openTiming?: {
+    bookId: number
+    clickStartedAt: number
+    invokeStartedAt: number
+    invokeFinishedAt: number
+  } | null
   onBack: () => void
   onProgressChange: (chapterIndex: number, progressPercent: number) => Promise<void>
 }
@@ -67,6 +73,8 @@ const readerSidebarItemStyles: Record<ReaderTheme, { active: string; inactive: s
   },
 }
 
+const loggedInitialRenderKeys = new Set<string>()
+
 function computeProgress(chapterIndex: number, chapterCount: number): number {
   if (chapterCount <= 1) {
     return chapterIndex > 0 ? 100 : 0
@@ -75,17 +83,177 @@ function computeProgress(chapterIndex: number, chapterCount: number): number {
   return Math.round((chapterIndex / (chapterCount - 1)) * 100)
 }
 
-export function EpubReaderScreen({
+type ReaderChapterListProps = {
+  chapters: ReaderChapter[]
+  currentChapterIndex: number
+  readerTheme: ReaderTheme
+  onSelectChapter: (chapterIndex: number) => void
+}
+
+const ReaderChapterList = memo(function ReaderChapterList({
+  chapters,
+  currentChapterIndex,
+  readerTheme,
+  onSelectChapter,
+}: ReaderChapterListProps) {
+  return (
+    <nav aria-label="Capítulos e seções do livro" className="space-y-1.5">
+      {chapters.map((chapter, chapterIndex) => {
+        const isCurrentChapter = chapterIndex === currentChapterIndex
+
+        return (
+          <button
+            key={`${chapter.title}-${chapterIndex}`}
+            type="button"
+            aria-current={isCurrentChapter ? 'page' : undefined}
+            onClick={() => onSelectChapter(chapterIndex)}
+            className={cn(
+              'w-full rounded-2xl border px-3 py-2.5 text-left text-sm leading-snug transition-colors',
+              isCurrentChapter
+                ? readerSidebarItemStyles[readerTheme].active
+                : readerSidebarItemStyles[readerTheme].inactive,
+            )}
+          >
+            <span className="mb-1 block text-[0.68rem] font-semibold uppercase tracking-[0.18em] opacity-55">
+              {chapterIndex + 1}
+            </span>
+            <span className="line-clamp-2 font-medium">{chapter.title}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+})
+
+type ReaderProgressSummaryProps = {
+  bookTitle: string
+  chapterCount: number
+  currentChapterIndex: number
+  progressPercent: number
+  readerTheme: ReaderTheme
+}
+
+const ReaderProgressSummary = memo(function ReaderProgressSummary({
+  bookTitle,
+  chapterCount,
+  currentChapterIndex,
+  progressPercent,
+  readerTheme,
+}: ReaderProgressSummaryProps) {
+  return (
+    <div className="mx-auto w-full max-w-3xl space-y-4">
+      <p className="text-xs font-semibold uppercase tracking-[0.28em] opacity-55">Leitura atual</p>
+      <h1 className="font-display text-4xl leading-[1.04] tracking-[-0.03em] sm:text-5xl">{bookTitle}</h1>
+      <div className={cn('h-1.5 w-full overflow-hidden rounded-full', readerProgressTrackStyles[readerTheme])}>
+        <div
+          className={cn('h-full rounded-full transition-[width] duration-500', readerProgressFillStyles[readerTheme])}
+          style={{ width: `${progressPercent}%` }}
+        />
+      </div>
+      <p className="text-sm opacity-80">
+        Capítulo {currentChapterIndex + 1} de {chapterCount} · {progressPercent}%
+      </p>
+    </div>
+  )
+})
+
+type ReaderArticleProps = {
+  chapter: ReaderChapter
+  readerTheme: ReaderTheme
+}
+
+const ReaderArticle = memo(function ReaderArticle({ chapter, readerTheme }: ReaderArticleProps) {
+  const plainParagraphs = useMemo(() => {
+    if (chapter.html) {
+      return []
+    }
+
+    return chapter.content
+      .split('\n\n')
+      .map((paragraph) => paragraph.trim())
+      .filter(Boolean)
+  }, [chapter.content, chapter.html])
+
+  return (
+    <article
+      className={cn(
+        'mx-auto w-full max-w-3xl rounded-[2rem] border px-5 py-8 backdrop-blur sm:px-10 sm:py-12 lg:px-14',
+        readerSurfaceStyles[readerTheme],
+      )}
+    >
+      <h2 className="mb-8 font-display text-3xl leading-[1.08] tracking-[-0.02em] sm:text-4xl">{chapter.title}</h2>
+      {chapter.html ? (
+        <div
+          className={cn('epub-content', readerTheme === 'night' ? 'epub-content-night' : 'epub-content-paper')}
+          dangerouslySetInnerHTML={{ __html: chapter.html }}
+        />
+      ) : (
+        <div
+          className={cn(
+            'epub-content epub-content-plain',
+            readerTheme === 'night' ? 'epub-content-night' : 'epub-content-paper',
+          )}
+        >
+          {plainParagraphs.map((paragraph, paragraphIndex) => (
+            <p key={`${chapter.title}-${paragraphIndex}`}>{paragraph}</p>
+          ))}
+        </div>
+      )}
+    </article>
+  )
+})
+
+type ReaderBottomNavigationProps = {
+  canGoToPreviousChapter: boolean
+  canGoToNextChapter: boolean
+  onPreviousChapter: () => void
+  onNextChapter: () => void
+}
+
+const ReaderBottomNavigation = memo(function ReaderBottomNavigation({
+  canGoToPreviousChapter,
+  canGoToNextChapter,
+  onPreviousChapter,
+  onNextChapter,
+}: ReaderBottomNavigationProps) {
+  return (
+    <div className="mx-auto flex w-full max-w-3xl items-center justify-between border-t border-current/10 pt-5">
+      <Button
+        variant="outline"
+        aria-label="Ir para o capítulo anterior"
+        onClick={onPreviousChapter}
+        disabled={!canGoToPreviousChapter}
+      >
+        <ChevronLeft className="h-4 w-4" />
+        Anterior
+      </Button>
+
+      <Button
+        variant="outline"
+        aria-label="Ir para o próximo capítulo"
+        onClick={onNextChapter}
+        disabled={!canGoToNextChapter}
+      >
+        Próximo
+        <ChevronRight className="h-4 w-4" />
+      </Button>
+    </div>
+  )
+})
+
+export const EpubReaderScreen = memo(function EpubReaderScreen({
   bookId,
   bookTitle,
   chapters,
   initialChapterIndex,
+  openTiming,
   onBack,
   onProgressChange,
 }: EpubReaderScreenProps) {
   const [readerTheme, setReaderTheme] = useState<ReaderTheme>('paper')
   const [isChapterListOpen, setIsChapterListOpen] = useState(false)
   const [isDesktopChapterSidebarCollapsed, setIsDesktopChapterSidebarCollapsed] = useState(true)
+  const didLogInitialRenderRef = useRef(false)
   const [currentChapterIndex, setCurrentChapterIndex] = useState(() =>
     Math.max(0, Math.min(initialChapterIndex, chapters.length - 1)),
   )
@@ -97,6 +265,43 @@ export function EpubReaderScreen({
   )
   const canGoToPreviousChapter = currentChapterIndex > 0
   const canGoToNextChapter = currentChapterIndex < chapters.length - 1
+  const closeChapterList = useCallback(() => setIsChapterListOpen(false), [])
+  const toggleChapterList = useCallback(() => setIsChapterListOpen((current) => !current), [])
+  const toggleDesktopChapterSidebar = useCallback(
+    () => setIsDesktopChapterSidebarCollapsed((current) => !current),
+    [],
+  )
+  const expandDesktopChapterSidebar = useCallback(() => setIsDesktopChapterSidebarCollapsed(false), [])
+  const setPaperTheme = useCallback(() => setReaderTheme('paper'), [])
+  const setNightTheme = useCallback(() => setReaderTheme('night'), [])
+
+  useEffect(() => {
+    if (didLogInitialRenderRef.current) {
+      return
+    }
+
+    didLogInitialRenderRef.current = true
+    const renderKey = openTiming ? `${bookId}:${openTiming.clickStartedAt}` : `${bookId}:unknown`
+    const scheduledAt = performance.now()
+    const frameId = window.requestAnimationFrame(() => {
+      if (loggedInitialRenderKeys.has(renderKey)) {
+        return
+      }
+
+      loggedInitialRenderKeys.add(renderKey)
+      const renderedAt = performance.now()
+      console.info('[reader/open] tela inicial do reader renderizada', {
+        bookId,
+        chapters: chapters.length,
+        renderAfterStateMs: openTiming ? Math.round(renderedAt - openTiming.invokeFinishedAt) : null,
+        clickToFirstRenderMs: openTiming ? Math.round(renderedAt - openTiming.clickStartedAt) : null,
+        frameWaitMs: Math.round(renderedAt - scheduledAt),
+      })
+      console.groupEnd()
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [bookId, chapters.length, openTiming])
 
   const goToChapter = useCallback((chapterIndex: number) => {
     setCurrentChapterIndex(Math.max(0, Math.min(chapterIndex, chapters.length - 1)))
@@ -122,6 +327,14 @@ export function EpubReaderScreen({
       return nextChapterIndex
     })
   }, [chapters.length])
+
+  const selectChapterAndCloseList = useCallback(
+    (chapterIndex: number) => {
+      goToChapter(chapterIndex)
+      setIsChapterListOpen(false)
+    },
+    [goToChapter],
+  )
 
   useEffect(() => {
     setCurrentChapterIndex(Math.max(0, Math.min(initialChapterIndex, chapters.length - 1)))
@@ -172,37 +385,6 @@ export function EpubReaderScreen({
     return () => window.removeEventListener('keydown', handleReaderKeyDown)
   }, [canGoToNextChapter, canGoToPreviousChapter, goToNextChapter, goToPreviousChapter, isChapterListOpen, onBack])
 
-  const chapterList = (
-    <nav aria-label="Capítulos e seções do livro" className="space-y-1.5">
-      {chapters.map((chapter, chapterIndex) => {
-        const isCurrentChapter = chapterIndex === currentChapterIndex
-
-        return (
-          <button
-            key={`${chapter.title}-${chapterIndex}`}
-            type="button"
-            aria-current={isCurrentChapter ? 'page' : undefined}
-            onClick={() => {
-              goToChapter(chapterIndex)
-              setIsChapterListOpen(false)
-            }}
-            className={cn(
-              'w-full rounded-2xl border px-3 py-2.5 text-left text-sm leading-snug transition-colors',
-              isCurrentChapter
-                ? readerSidebarItemStyles[readerTheme].active
-                : readerSidebarItemStyles[readerTheme].inactive,
-            )}
-          >
-            <span className="mb-1 block text-[0.68rem] font-semibold uppercase tracking-[0.18em] opacity-55">
-              {chapterIndex + 1}
-            </span>
-            <span className="line-clamp-2 font-medium">{chapter.title}</span>
-          </button>
-        )
-      })}
-    </nav>
-  )
-
   return (
     <section
       className={cn(
@@ -216,7 +398,7 @@ export function EpubReaderScreen({
           type="button"
           aria-label="Fechar sumário"
           className="fixed inset-0 z-30 bg-black/28 backdrop-blur-[2px] lg:hidden"
-          onClick={() => setIsChapterListOpen(false)}
+          onClick={closeChapterList}
         />
       ) : null}
 
@@ -248,7 +430,7 @@ export function EpubReaderScreen({
             aria-controls="reader-chapter-list"
             title={isDesktopChapterSidebarCollapsed ? 'Expandir sumário' : 'Recolher sumário'}
             className="hidden lg:inline-flex"
-            onClick={() => setIsDesktopChapterSidebarCollapsed((current) => !current)}
+            onClick={toggleDesktopChapterSidebar}
           >
             {isDesktopChapterSidebarCollapsed ? (
               <PanelLeftOpen className="h-5 w-5" />
@@ -262,7 +444,7 @@ export function EpubReaderScreen({
             size="icon"
             aria-label="Fechar sumário"
             className="lg:hidden"
-            onClick={() => setIsChapterListOpen(false)}
+            onClick={closeChapterList}
           >
             <ChevronLeft className="h-5 w-5" />
           </Button>
@@ -278,7 +460,7 @@ export function EpubReaderScreen({
             type="button"
             aria-current="page"
             aria-label={`Capítulo atual: ${currentChapter.title}`}
-            onClick={() => setIsDesktopChapterSidebarCollapsed(false)}
+            onClick={expandDesktopChapterSidebar}
             className={cn(
               'flex h-12 w-12 items-center justify-center rounded-2xl border text-sm font-semibold transition-colors',
               readerSidebarItemStyles[readerTheme].active,
@@ -303,7 +485,12 @@ export function EpubReaderScreen({
           <p className="mb-3 text-sm opacity-70">
             {chapters.length} {chapters.length === 1 ? 'seção' : 'seções'}
           </p>
-          {chapterList}
+          <ReaderChapterList
+            chapters={chapters}
+            currentChapterIndex={currentChapterIndex}
+            readerTheme={readerTheme}
+            onSelectChapter={selectChapterAndCloseList}
+          />
         </div>
       </aside>
 
@@ -370,7 +557,7 @@ export function EpubReaderScreen({
               variant="outline"
               aria-expanded={isChapterListOpen}
               aria-controls="reader-chapter-sidebar"
-              onClick={() => setIsChapterListOpen((current) => !current)}
+              onClick={toggleChapterList}
               className="lg:hidden"
             >
               <ListTree className="h-4 w-4" />
@@ -383,14 +570,14 @@ export function EpubReaderScreen({
             <Button
               size="sm"
               variant={readerTheme === 'paper' ? 'default' : 'outline'}
-              onClick={() => setReaderTheme('paper')}
+              onClick={setPaperTheme}
             >
               Papel
             </Button>
             <Button
               size="sm"
               variant={readerTheme === 'night' ? 'default' : 'outline'}
-              onClick={() => setReaderTheme('night')}
+              onClick={setNightTheme}
             >
               Noturno
             </Button>
@@ -406,77 +593,23 @@ export function EpubReaderScreen({
             : 'lg:ml-[19rem] lg:max-w-[calc(100vw-19rem)]',
         )}
       >
-        <div className="mx-auto w-full max-w-3xl space-y-4">
-          <p className="text-xs font-semibold uppercase tracking-[0.28em] opacity-55">Leitura atual</p>
-          <h1 className="font-display text-4xl leading-[1.04] tracking-[-0.03em] sm:text-5xl">{bookTitle}</h1>
-          <div className={cn('h-1.5 w-full overflow-hidden rounded-full', readerProgressTrackStyles[readerTheme])}>
-            <div
-              className={cn('h-full rounded-full transition-[width] duration-500', readerProgressFillStyles[readerTheme])}
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-          <p className="text-sm opacity-80">
-            Capítulo {currentChapterIndex + 1} de {chapters.length} · {progressPercent}%
-          </p>
-        </div>
+        <ReaderProgressSummary
+          bookTitle={bookTitle}
+          chapterCount={chapters.length}
+          currentChapterIndex={currentChapterIndex}
+          progressPercent={progressPercent}
+          readerTheme={readerTheme}
+        />
 
-        <article
-          className={cn(
-            'mx-auto w-full max-w-3xl rounded-[2rem] border px-5 py-8 backdrop-blur sm:px-10 sm:py-12 lg:px-14',
-            readerSurfaceStyles[readerTheme],
-          )}
-        >
-          <h2 className="mb-8 font-display text-3xl leading-[1.08] tracking-[-0.02em] sm:text-4xl">
-            {currentChapter.title}
-          </h2>
-          {currentChapter.html ? (
-            <div
-              className={cn(
-                'epub-content',
-                readerTheme === 'night' ? 'epub-content-night' : 'epub-content-paper',
-              )}
-              dangerouslySetInnerHTML={{ __html: currentChapter.html }}
-            />
-          ) : (
-            <div
-              className={cn(
-                'epub-content epub-content-plain',
-                readerTheme === 'night' ? 'epub-content-night' : 'epub-content-paper',
-              )}
-            >
-              {currentChapter.content
-                .split('\n\n')
-                .map((paragraph) => paragraph.trim())
-                .filter(Boolean)
-                .map((paragraph, paragraphIndex) => (
-                  <p key={`${currentChapter.title}-${paragraphIndex}`}>{paragraph}</p>
-                ))}
-            </div>
-          )}
-        </article>
+        <ReaderArticle chapter={currentChapter} readerTheme={readerTheme} />
 
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between border-t border-current/10 pt-5">
-          <Button
-            variant="outline"
-            aria-label="Ir para o capítulo anterior"
-            onClick={goToPreviousChapter}
-            disabled={!canGoToPreviousChapter}
-          >
-            <ChevronLeft className="h-4 w-4" />
-            Anterior
-          </Button>
-
-          <Button
-            variant="outline"
-            aria-label="Ir para o próximo capítulo"
-            onClick={goToNextChapter}
-            disabled={!canGoToNextChapter}
-          >
-            Próximo
-            <ChevronRight className="h-4 w-4" />
-          </Button>
-        </div>
+        <ReaderBottomNavigation
+          canGoToPreviousChapter={canGoToPreviousChapter}
+          canGoToNextChapter={canGoToNextChapter}
+          onPreviousChapter={goToPreviousChapter}
+          onNextChapter={goToNextChapter}
+        />
       </main>
     </section>
   )
-}
+})
