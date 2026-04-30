@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 import type { Book } from '@/types/book'
 
 import { cn } from '@/lib/utils'
@@ -30,7 +32,7 @@ function gradientById(bookId: number): string {
   return gradients[index]
 }
 
-export function BookCover({ book, size = 'md' }: BookCoverProps) {
+export const BookCover = memo(function BookCover({ book, size = 'md' }: BookCoverProps) {
   const isSmall = size === 'sm'
   const coverImageData = book.coverImageData?.trim()
   const hasCoverImage = Boolean(coverImageData && coverImageData.startsWith('data:image/'))
@@ -57,4 +59,4 @@ export function BookCover({ book, size = 'md' }: BookCoverProps) {
       )}
     </div>
   )
-}
+})

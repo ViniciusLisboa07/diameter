@@ -37,8 +37,8 @@ const readerHeaderStyles: Record<ReaderTheme, string> = {
 }
 
 const readerSurfaceStyles: Record<ReaderTheme, string> = {
-  paper: 'border-[#dccaaa]/70 bg-[#fffaf0]/70 shadow-[0_24px_80px_rgba(89,68,39,0.12)]',
-  night: 'border-white/10 bg-[#182131]/72 shadow-[0_24px_80px_rgba(0,0,0,0.28)]',
+  paper: 'border-[#dccaaa]/70 bg-[#fffaf0] shadow-[0_12px_34px_rgba(89,68,39,0.10)]',
+  night: 'border-white/10 bg-[#182131] shadow-[0_14px_38px_rgba(0,0,0,0.22)]',
 }
 
 const readerProgressTrackStyles: Record<ReaderTheme, string> = {
@@ -52,13 +52,13 @@ const readerProgressFillStyles: Record<ReaderTheme, string> = {
 }
 
 const readerFloatingNavStyles: Record<ReaderTheme, string> = {
-  paper: 'border-[#d8c3a1]/80 bg-[#fffaf0]/78 text-[#3b2b19] shadow-[0_16px_45px_rgba(89,68,39,0.16)] hover:bg-[#fffaf0]',
-  night: 'border-white/10 bg-[#1a2434]/78 text-[#f2e6d2] shadow-[0_16px_45px_rgba(0,0,0,0.32)] hover:bg-[#243149]',
+  paper: 'border-[#d8c3a1]/80 bg-[#fffaf0] text-[#3b2b19] shadow-[0_10px_26px_rgba(89,68,39,0.12)] hover:bg-[#fffaf0]',
+  night: 'border-white/10 bg-[#1a2434] text-[#f2e6d2] shadow-[0_10px_28px_rgba(0,0,0,0.24)] hover:bg-[#243149]',
 }
 
 const readerSidebarStyles: Record<ReaderTheme, string> = {
-  paper: 'border-[#d9c6a5]/80 bg-[#fffaf0]/82 shadow-[18px_0_55px_rgba(89,68,39,0.12)]',
-  night: 'border-white/10 bg-[#172132]/86 shadow-[18px_0_55px_rgba(0,0,0,0.26)]',
+  paper: 'border-[#d9c6a5]/80 bg-[#fffaf0] shadow-[10px_0_28px_rgba(89,68,39,0.10)]',
+  night: 'border-white/10 bg-[#172132] shadow-[10px_0_30px_rgba(0,0,0,0.22)]',
 }
 
 const readerSidebarItemStyles: Record<ReaderTheme, { active: string; inactive: string }> = {
@@ -165,7 +165,7 @@ const ReaderArticle = memo(function ReaderArticle({ chapter, readerTheme }: Read
   return (
     <article
       className={cn(
-        'mx-auto w-full max-w-3xl rounded-[2rem] border px-5 py-8 backdrop-blur sm:px-10 sm:py-12 lg:px-14',
+        'mx-auto w-full max-w-3xl rounded-[2rem] border px-5 py-8 sm:px-10 sm:py-12 lg:px-14',
         readerSurfaceStyles[readerTheme],
       )}
     >
@@ -215,6 +215,10 @@ const ReaderBottomNavigation = memo(function ReaderBottomNavigation({
     </div>
   )
 })
+
+function scrollReaderToTop() {
+  window.scrollTo({ top: 0, behavior: 'auto' })
+}
 
 export const EpubReaderScreen = memo(function EpubReaderScreen({
   bookId,
@@ -280,14 +284,14 @@ export const EpubReaderScreen = memo(function EpubReaderScreen({
 
   const goToChapter = useCallback((chapterIndex: number) => {
     setCurrentChapterIndex(Math.max(0, Math.min(chapterIndex, chapters.length - 1)))
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    scrollReaderToTop()
   }, [chapters.length])
 
   const goToPreviousChapter = useCallback(() => {
     setCurrentChapterIndex((current) => {
       const nextChapterIndex = Math.max(0, current - 1)
       if (nextChapterIndex !== current) {
-        window.scrollTo({ top: 0, behavior: 'smooth' })
+        scrollReaderToTop()
       }
       return nextChapterIndex
     })
@@ -297,7 +301,7 @@ export const EpubReaderScreen = memo(function EpubReaderScreen({
     setCurrentChapterIndex((current) => {
       const nextChapterIndex = Math.min(chapters.length - 1, current + 1)
       if (nextChapterIndex !== current) {
-        window.scrollTo({ top: 0, behavior: 'smooth' })
+        scrollReaderToTop()
       }
       return nextChapterIndex
     })
@@ -372,7 +376,7 @@ export const EpubReaderScreen = memo(function EpubReaderScreen({
         <button
           type="button"
           aria-label="Fechar sumário"
-          className="fixed inset-0 z-30 bg-black/28 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-0 z-30 bg-black/28 lg:hidden"
           onClick={closeChapterList}
         />
       ) : null}
@@ -380,7 +384,7 @@ export const EpubReaderScreen = memo(function EpubReaderScreen({
       <aside
         id="reader-chapter-sidebar"
         className={cn(
-          'fixed inset-y-0 left-0 z-40 flex w-[19rem] max-w-[calc(100vw-2rem)] flex-col border-r px-4 py-5 backdrop-blur-2xl transition-transform duration-200 lg:translate-x-0 lg:transition-[width,padding] lg:duration-200',
+          'fixed inset-y-0 left-0 z-40 flex w-[19rem] max-w-[calc(100vw-2rem)] flex-col border-r px-4 py-5 transition-transform duration-200 lg:translate-x-0 lg:transition-[width,padding] lg:duration-200',
           isChapterListOpen ? 'translate-x-0' : '-translate-x-full',
           isDesktopChapterSidebarCollapsed ? 'lg:w-[5.25rem] lg:px-3' : 'lg:w-[19rem] lg:px-4',
           readerSidebarStyles[readerTheme],
@@ -488,7 +492,7 @@ export const EpubReaderScreen = memo(function EpubReaderScreen({
             onClick={goToPreviousChapter}
             disabled={!canGoToPreviousChapter}
             className={cn(
-              'reader-floating-nav pointer-events-auto h-14 w-14 rounded-full border backdrop-blur-xl transition-all duration-200',
+              'reader-floating-nav pointer-events-auto h-14 w-14 rounded-full border transition-all duration-200',
               readerFloatingNavStyles[readerTheme],
             )}
           >
@@ -504,7 +508,7 @@ export const EpubReaderScreen = memo(function EpubReaderScreen({
             onClick={goToNextChapter}
             disabled={!canGoToNextChapter}
             className={cn(
-              'reader-floating-nav pointer-events-auto h-14 w-14 rounded-full border backdrop-blur-xl transition-all duration-200',
+              'reader-floating-nav pointer-events-auto h-14 w-14 rounded-full border transition-all duration-200',
               readerFloatingNavStyles[readerTheme],
             )}
           >
@@ -515,7 +519,7 @@ export const EpubReaderScreen = memo(function EpubReaderScreen({
 
       <header
         className={cn(
-          'sticky top-0 z-10 border-b backdrop-blur-xl',
+          'sticky top-0 z-10 border-b',
           isDesktopChapterSidebarCollapsed ? 'lg:ml-[5.25rem]' : 'lg:ml-[19rem]',
           readerHeaderStyles[readerTheme],
         )}

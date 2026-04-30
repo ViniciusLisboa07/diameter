@@ -58,10 +58,6 @@
 }
 
 @layer components {
-  .reader-shell {
-    background-attachment: fixed;
-  }
-
   .reader-shell-paper {
     background-image:
       radial-gradient(circle at 12% 8%, rgba(141, 95, 50, 0.12), transparent 28rem),
@@ -98,6 +94,11 @@
     line-height: 1.9;
     letter-spacing: 0.002em;
     overflow-wrap: break-word;
+  }
+
+  .epub-content > * {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 3rem;
   }
 
   .epub-content > :first-child {
@@ -224,7 +225,7 @@
   }
 
   .epub-content-paper img {
-    box-shadow: 0 18px 50px rgba(89, 68, 39, 0.16);
+    box-shadow: 0 10px 28px rgba(89, 68, 39, 0.12);
   }
 
   .epub-content-paper a {
@@ -245,10 +246,23 @@
   }
 
   .epub-content-night img {
-    box-shadow: 0 18px 55px rgba(0, 0, 0, 0.34);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28);
   }
 
   .epub-content-night a {
     color: #e5c17d;
+  }
+
+  .library-scroll {
+    scrollbar-gutter: stable;
+  }
+
+  .library-item {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 15rem;
+  }
+
+  .library-item-list {
+    contain-intrinsic-size: auto 6rem;
   }
 }
