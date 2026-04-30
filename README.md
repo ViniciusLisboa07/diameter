@@ -1,73 +1,68 @@
-# React + TypeScript + Vite
+# Diameter
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Diameter é um leitor desktop para organizar uma biblioteca local de ebooks. O app foi construído como um MVP em Tauri, com interface React e backend Rust para persistência, importação de arquivos e leitura de EPUB.
 
-Currently, two official plugins are available:
+![Biblioteca do Diameter](docs/screenshots/library.png)
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Funcionalidades
 
-## React Compiler
+- Biblioteca local com visualização em grade ou lista.
+- Importação por drag and drop de arquivos EPUB e PDF.
+- Busca por título ou autor e filtro por tags.
+- Painel lateral com capa, formato, progresso, tags e metadados editáveis.
+- Exclusão de livros importados.
+- Leitor EPUB integrado com navegação por capítulos, tema papel/noturno e salvamento de progresso.
+- Persistência local em SQLite.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+![Leitor EPUB do Diameter](docs/screenshots/reader.png)
 
-## Expanding the ESLint configuration
+## Stack
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- Tauri 2 para empacotamento desktop e integração com APIs nativas.
+- Rust no backend, com `rusqlite` para banco local, `zip`/`roxmltree` para processamento de EPUB e `base64` para capas.
+- React 19 + TypeScript no frontend.
+- Vite 8 para desenvolvimento e build do frontend.
+- Tailwind CSS para estilos.
+- Lucide React para iconografia.
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+## Como rodar
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+Instale as dependências:
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Rode apenas o frontend:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm run dev
 ```
+
+Rode o aplicativo desktop com Tauri:
+
+```bash
+npm run tauri dev
+```
+
+Gere o build do frontend:
+
+```bash
+npm run build
+```
+
+Execute o lint:
+
+```bash
+npm run lint
+```
+
+## Estrutura
+
+- `src/`: interface React, componentes de layout, leitor EPUB e camada de chamada dos comandos Tauri.
+- `src-tauri/`: aplicação Tauri em Rust, comandos, banco SQLite, importação de arquivos e parser EPUB.
+- `docs/screenshots/`: capturas usadas neste README.
+
+## Observações
+
+A leitura integrada está disponível para EPUB. Arquivos PDF podem ser importados e catalogados, mas ainda não têm leitor interno nesta fase do projeto.
