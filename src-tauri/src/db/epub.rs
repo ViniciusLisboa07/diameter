@@ -7,6 +7,7 @@ use std::{
     time::Instant,
 };
 
+use base64::{engine::general_purpose, Engine as _};
 use regex::Regex;
 use roxmltree::Document;
 use zip::{read::ZipFile, ZipArchive};
@@ -24,6 +25,13 @@ struct ManifestItem {
 #[derive(Debug, Clone)]
 struct EpubSection {
     path: String,
+    html: String,
+}
+
+#[derive(Debug, Clone)]
+struct BuiltChapter {
+    title: Option<String>,
+    fallback_title: String,
     html: String,
 }
 
@@ -103,13 +111,14 @@ pub fn read_epub_file(epub_path: &Path) -> Result<Vec<EpubChapterDto>, String> {
     );
 
     let chapters_started_at = Instant::now();
-    let chapters = sections
+    let built_chapters = sections
         .into_iter()
         .enumerate()
         .filter_map(|(index, section)| {
-            build_chapter(section, index + 1, &title_by_path).transpose()
+            build_chapter(&mut archive, section, index + 1, &title_by_path).transpose()
         })
         .collect::<Result<Vec<_>, String>>()?;
+    let chapters = merge_untitled_chapters(built_chapters);
     log::info!(
         "[reader/open] EPUB chapters built chapters={} elapsed_ms={}",
         chapters.len(),
@@ -147,14 +156,16 @@ pub fn parse_last_chapter_index(last_position: Option<String>, chapter_count: us
     parsed.clamp(0, max_index)
 }
 
-fn build_chapter(
+fn build_chapter<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
     section: EpubSection,
     fallback_index: usize,
     title_by_path: &HashMap<String, String>,
-) -> Result<Option<EpubChapterDto>, String> {
+) -> Result<Option<BuiltChapter>, String> {
     let sanitized_html = sanitize_epub_html(&section.html)?;
-    let content = sanitize_epub_html_to_text(&sanitized_html)?;
-    if content.is_empty() {
+    let html = embed_epub_images(archive, &section.path, &sanitized_html)?;
+    let content = sanitize_epub_html_to_text(&html)?;
+    if content.is_empty() && !has_image_tag(&html) {
         return Ok(None);
     }
 
@@ -165,16 +176,69 @@ fn build_chapter(
     let html_title = extract_heading_title(&section.html).filter(|title| is_useful_title(title));
     let path_title = chapter_title_from_path(&section.path).filter(|title| is_useful_title(title));
 
-    let title = toc_title
-        .cloned()
-        .or(html_title)
-        .or(path_title)
-        .unwrap_or_else(|| fallback_title_for_path(&section.path, fallback_index));
+    let title = toc_title.cloned().or(html_title).or(path_title);
 
-    Ok(Some(EpubChapterDto {
+    Ok(Some(BuiltChapter {
         title,
-        html: sanitized_html,
+        fallback_title: fallback_title_for_path(&section.path, fallback_index),
+        html,
     }))
+}
+
+fn merge_untitled_chapters(chapters: Vec<BuiltChapter>) -> Vec<EpubChapterDto> {
+    if chapters.iter().all(|chapter| chapter.title.is_none()) {
+        return chapters
+            .into_iter()
+            .map(|chapter| EpubChapterDto {
+                title: chapter.fallback_title,
+                html: chapter.html,
+            })
+            .collect();
+    }
+
+    let mut merged = Vec::<EpubChapterDto>::new();
+    let mut leading_fragments = Vec::<String>::new();
+
+    for chapter in chapters {
+        match chapter.title {
+            Some(title) => {
+                let html = if leading_fragments.is_empty() {
+                    chapter.html
+                } else {
+                    let mut fragments = std::mem::take(&mut leading_fragments);
+                    fragments.push(chapter.html);
+                    join_html_fragments(fragments)
+                };
+                merged.push(EpubChapterDto { title, html });
+            }
+            None => {
+                if let Some(previous) = merged.last_mut() {
+                    previous.html =
+                        join_html_fragments(vec![std::mem::take(&mut previous.html), chapter.html]);
+                } else {
+                    leading_fragments.push(chapter.html);
+                }
+            }
+        }
+    }
+
+    if !leading_fragments.is_empty() {
+        let title = format!("Capítulo {}", merged.len() + 1);
+        merged.push(EpubChapterDto {
+            title,
+            html: join_html_fragments(leading_fragments),
+        });
+    }
+
+    merged
+}
+
+fn join_html_fragments(fragments: Vec<String>) -> String {
+    fragments
+        .into_iter()
+        .filter(|fragment| !fragment.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn find_opf_path<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Option<String>, String> {
@@ -348,18 +412,34 @@ fn parse_ncx_titles(input: &str, base_dir: &str) -> Vec<(String, String)> {
 
 fn extract_heading_title(input: &str) -> Option<String> {
     let document = Document::parse(input).ok()?;
-    let title = document
+
+    let heading_title = document
         .descendants()
         .filter(|node| node.is_element())
-        .find(|node| matches!(node.tag_name().name(), "h1" | "h2" | "h3" | "title"))?
-        .text()
-        .map(normalize_text)?;
-
-    if title.is_empty() {
-        None
-    } else {
-        Some(title)
+        .find(|node| matches!(node.tag_name().name(), "h1" | "h2" | "h3"))
+        .map(extract_node_text)
+        .filter(|title| !title.is_empty());
+    if heading_title.is_some() {
+        return heading_title;
     }
+
+    document
+        .descendants()
+        .filter(|node| node.is_element())
+        .find(|node| node.tag_name().name() == "title")
+        .map(extract_node_text)
+        .filter(|title| !title.is_empty())
+}
+
+fn extract_node_text(node: roxmltree::Node<'_, '_>) -> String {
+    normalize_text(
+        &node
+            .descendants()
+            .filter(|descendant| descendant.is_text())
+            .filter_map(|descendant| descendant.text())
+            .collect::<Vec<_>>()
+            .join(" "),
+    )
 }
 
 fn read_zip_text_entry<R: Read + Seek>(
@@ -379,6 +459,141 @@ fn read_zip_file_to_string(entry: &mut ZipFile<'_>) -> Result<String, String> {
         .read_to_string(&mut content)
         .map_err(|err| format!("failed to read EPUB entry as text: {err}"))?;
     Ok(content)
+}
+
+fn read_zip_binary_entry<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    path: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    let Ok(mut entry) = archive.by_name(path) else {
+        return Ok(None);
+    };
+
+    let mut content = Vec::new();
+    entry
+        .read_to_end(&mut content)
+        .map_err(|err| format!("failed to read EPUB entry as binary: {err}"))?;
+    Ok(Some(content))
+}
+
+fn embed_epub_images<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    section_path: &str,
+    input: &str,
+) -> Result<String, String> {
+    let src_attr_re = Regex::new(r#"(?i)\s+(src)\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))"#)
+        .map_err(|err| format!("failed to compile image source regex: {err}"))?;
+    let base_dir = parent_dir(section_path);
+    let mut output = String::with_capacity(input.len());
+    let mut last_end = 0;
+
+    for captures in src_attr_re.captures_iter(input) {
+        let Some(full_match) = captures.get(0) else {
+            continue;
+        };
+        output.push_str(&input[last_end..full_match.start()]);
+
+        let raw_src = captures
+            .get(3)
+            .or_else(|| captures.get(4))
+            .or_else(|| captures.get(5))
+            .map(|match_| match_.as_str())
+            .unwrap_or_default();
+
+        if let Some(data_uri) = epub_image_data_uri(archive, &base_dir, raw_src) {
+            output.push_str(&format!(" src=\"{data_uri}\""));
+        } else {
+            output.push_str(full_match.as_str());
+        }
+
+        last_end = full_match.end();
+    }
+
+    output.push_str(&input[last_end..]);
+    Ok(output)
+}
+
+fn epub_image_data_uri<R: Read + Seek>(
+    archive: &mut ZipArchive<R>,
+    base_dir: &str,
+    src: &str,
+) -> Option<String> {
+    if !is_local_epub_resource(src) {
+        return None;
+    }
+
+    let decoded_src = percent_decode(&decode_basic_html_entities(src.trim()));
+    let src_without_suffix = decoded_src.split(['#', '?']).next().unwrap_or(&decoded_src);
+    let image_path = normalize_epub_path(base_dir, src_without_suffix);
+    let media_type = image_media_type(&image_path)?;
+    let image_bytes = read_zip_binary_entry(archive, &image_path).ok().flatten()?;
+    if image_bytes.is_empty() {
+        return None;
+    }
+
+    Some(format!(
+        "data:{media_type};base64,{}",
+        general_purpose::STANDARD.encode(image_bytes)
+    ))
+}
+
+fn is_local_epub_resource(src: &str) -> bool {
+    let lowered = src.trim().to_lowercase();
+    !lowered.is_empty()
+        && !lowered.starts_with('#')
+        && !lowered.starts_with("data:")
+        && !lowered.starts_with("http:")
+        && !lowered.starts_with("https:")
+        && !lowered.starts_with("mailto:")
+}
+
+fn image_media_type(path: &str) -> Option<&'static str> {
+    let extension = Path::new(path)
+        .extension()
+        .and_then(OsStr::to_str)?
+        .to_lowercase();
+
+    match extension.as_str() {
+        "avif" => Some("image/avif"),
+        "bmp" => Some("image/bmp"),
+        "gif" => Some("image/gif"),
+        "jpe" | "jpeg" | "jpg" => Some("image/jpeg"),
+        "png" => Some("image/png"),
+        "webp" => Some("image/webp"),
+        _ => None,
+    }
+}
+
+fn percent_decode(input: &str) -> String {
+    let bytes = input.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let (Some(high), Some(low)) =
+                (hex_value(bytes[index + 1]), hex_value(bytes[index + 2]))
+            {
+                decoded.push(high * 16 + low);
+                index += 3;
+                continue;
+            }
+        }
+
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+
+    String::from_utf8_lossy(&decoded).to_string()
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
 }
 
 fn find_html_paths<R: Read + Seek>(archive: &mut ZipArchive<R>) -> Result<Vec<String>, String> {
@@ -508,6 +723,11 @@ fn sanitize_epub_html(input: &str) -> Result<String, String> {
     Ok(body.trim().to_string())
 }
 
+fn has_image_tag(input: &str) -> bool {
+    let image_re = Regex::new(r"(?i)<img\b").expect("valid image tag regex");
+    image_re.is_match(input)
+}
+
 fn sanitize_epub_html_to_text(input: &str) -> Result<String, String> {
     let paragraph_break_re = Regex::new(r"(?i)</(p|div|section|article|h[1-6]|li|blockquote|tr)>")
         .map_err(|err| format!("failed to compile block regex: {err}"))?;
@@ -567,13 +787,34 @@ fn is_useful_title(title: &str) -> bool {
 }
 
 fn is_technical_title(title: &str) -> bool {
-    let lowered = title.trim().to_lowercase().replace(['_', '-'], " ");
+    let normalized = normalize_text(title);
+    let raw_lowered = normalized.trim().to_lowercase();
+    let lowered = raw_lowered.replace(['_', '-'], " ");
     let compact = lowered.replace(' ', "");
+    let without_fragment = raw_lowered.split('#').next().unwrap_or(&raw_lowered);
+    let extension = Path::new(without_fragment)
+        .extension()
+        .and_then(OsStr::to_str)
+        .unwrap_or_default();
+    let generic_titles = [
+        "unknown",
+        "untitled",
+        "sem titulo",
+        "sem título",
+        "titulo desconhecido",
+        "título desconhecido",
+    ];
     let technical_re =
         Regex::new(r"^(part|section|chapter|chap|text|body|file|page|html|xhtml)0*\d+$")
             .expect("valid technical title regex");
+    let short_alpha_numeric_re =
+        Regex::new(r"^[a-z]{1,3}0*\d+[a-z]?$").expect("valid short alpha numeric title regex");
     let numeric_re = Regex::new(r"^\d+$").expect("valid numeric title regex");
-    technical_re.is_match(&compact) || numeric_re.is_match(&compact)
+    matches!(extension, "xhtml" | "html" | "htm")
+        || generic_titles.contains(&lowered.as_str())
+        || technical_re.is_match(&compact)
+        || short_alpha_numeric_re.is_match(&compact)
+        || numeric_re.is_match(&compact)
 }
 
 fn title_case_words(input: &str) -> String {
@@ -588,4 +829,74 @@ fn title_case_words(input: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Cursor, Write};
+    use zip::{write::SimpleFileOptions, ZipWriter};
+
+    #[test]
+    fn rejects_epub_file_names_as_titles() {
+        assert!(!is_useful_title("a2.xhtml"));
+        assert!(!is_useful_title("Text/a2.xhtml"));
+        assert!(!is_useful_title("A2"));
+        assert!(!is_useful_title("Unknown"));
+        assert!(is_useful_title("A coragem de ser imperfeito"));
+    }
+
+    #[test]
+    fn heading_title_is_preferred_over_technical_document_title() {
+        let html = r#"
+            <html>
+                <head><title>a2.xhtml</title></head>
+                <body><h1>Capitulo real</h1><p>Conteudo.</p></body>
+            </html>
+        "#;
+
+        assert_eq!(
+            extract_heading_title(html).as_deref(),
+            Some("Capitulo real")
+        );
+    }
+
+    #[test]
+    fn untitled_fragments_are_merged_into_previous_clear_chapter() {
+        let chapters = merge_untitled_chapters(vec![
+            BuiltChapter {
+                title: Some("Capitulo real".to_string()),
+                fallback_title: "Capítulo 1".to_string(),
+                html: "<h1>Capitulo real</h1><p>Parte principal.</p>".to_string(),
+            },
+            BuiltChapter {
+                title: None,
+                fallback_title: "Capítulo 2".to_string(),
+                html: "<p>Fragmento sem titulo claro.</p>".to_string(),
+            },
+        ]);
+
+        assert_eq!(chapters.len(), 1);
+        assert_eq!(chapters[0].title, "Capitulo real");
+        assert!(chapters[0].html.contains("Parte principal."));
+        assert!(chapters[0].html.contains("Fragmento sem titulo claro."));
+    }
+
+    #[test]
+    fn local_epub_images_are_embedded_as_data_uris() {
+        let cursor = Cursor::new(Vec::new());
+        let mut writer = ZipWriter::new(cursor);
+        writer
+            .start_file("OEBPS/images/photo.jpg", SimpleFileOptions::default())
+            .unwrap();
+        writer.write_all(&[0xff, 0xd8, 0xff]).unwrap();
+        let cursor = writer.finish().unwrap();
+        let mut archive = ZipArchive::new(cursor).unwrap();
+
+        let html = r#"<p><img src="../images/photo.jpg" alt="Foto"></p>"#;
+        let embedded = embed_epub_images(&mut archive, "OEBPS/Text/chapter.xhtml", html).unwrap();
+
+        assert!(embedded.contains(r#"src="data:image/jpeg;base64,/9j/""#));
+        assert!(embedded.contains(r#"alt="Foto""#));
+    }
 }
